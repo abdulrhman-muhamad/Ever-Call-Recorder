@@ -3,7 +3,8 @@
 <img src="https://github.com/hari161008/Website-For-Everlasting-Android-Tweak/blob/main/Ever%20Call%20Recorder/Assets/Ever%20Call%20Recorder%20Banner.png" width="100%" />
 <br>
 Ever Call Recorder is the best Open - Source Call recorder which uses Shizuku to record both side calls and gives you them as audio files
-
+<br><br>
+Note: Since this app requires Shizuku, the Shizuku service stops automatically in the Official Shizuku App. To prevent this happening, Uninstall the Original Shizuku and Install this Shizuku Fork ([Click Here](https://github.com/thedjchi/Shizuku) And after installed, then run shizuku normally and make sure that you go to shizuku app, on the top right, click settings icon and click <b>"Watchdog"</b> which prevents Shizuku service from Stopping !!)
 <br>
 <br>
 <center>
