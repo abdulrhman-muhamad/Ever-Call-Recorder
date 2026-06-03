@@ -12,6 +12,8 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -124,7 +126,6 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.absoluteValue
-import com.coolappstore.evercallrecorder.by.svhp.transcription.TranscriptCodec
 
 /**
  * The single primary screen. One canonical place where the user lands:
@@ -227,7 +228,7 @@ fun PrimaryScreen(
             Column(modifier = Modifier.padding(padding).fillMaxSize()) {
                 AnimatedContent(
                     targetState = selectionUiActive,
-                    transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(180)) },
+                    transitionSpec = { fadeIn(tween(350)) togetherWith fadeOut(tween(280)) },
                     label = "topbar",
                 ) { sel ->
                     if (sel) {
@@ -264,8 +265,8 @@ fun PrimaryScreen(
                     daemonHealth !is DaemonHealth.Bound
                 AnimatedVisibility(
                     visible = bannerVisible && !selectionUiActive,
-                    enter = fadeIn(tween(220)),
-                    exit = fadeOut(tween(160)),
+                    enter = fadeIn(tween(380)) + slideInVertically(tween(420)) { -it / 4 },
+                    exit = fadeOut(tween(300)) + slideOutVertically(tween(340)) { -it / 4 },
                 ) {
                     StatusBanner(
                         daemonHealth = daemonHealth,
@@ -373,8 +374,8 @@ private fun TitleBar(
         // recorded — the FAB takes over with a clear Stop affordance.
         AnimatedVisibility(
             visible = !recordingActive,
-            enter = fadeIn(tween(180)),
-            exit = fadeOut(tween(120)),
+            enter = fadeIn(tween(360)) + scaleIn(tween(380), initialScale = 0.85f),
+            exit = fadeOut(tween(280)) + scaleOut(tween(300), targetScale = 0.85f),
         ) {
             IconButton(onClick = onManualRecord) {
                 Icon(
@@ -516,7 +517,7 @@ private fun StatusBanner(
                 Column(modifier = Modifier.weight(1f)) {
                     AnimatedContent(
                         targetState = primaryLabel,
-                        transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(180)) },
+                        transitionSpec = { fadeIn(tween(380)) togetherWith fadeOut(tween(280)) },
                         label = "primary",
                     ) { label ->
                         Text(
@@ -536,8 +537,8 @@ private fun StatusBanner(
                 // attention is on the status banner up top.
                 AnimatedVisibility(
                     visible = showStop,
-                    enter = scaleIn() + fadeIn(),
-                    exit = scaleOut() + fadeOut(),
+                    enter = scaleIn(tween(400), initialScale = 0.6f) + fadeIn(tween(380)),
+                    exit = scaleOut(tween(320), targetScale = 0.6f) + fadeOut(tween(280)),
                 ) {
                     Spacer(Modifier.size(12.dp))
                     FilledIconButton(
@@ -559,8 +560,8 @@ private fun StatusBanner(
             AnimatedVisibility(
                 visible = recState is RecorderController.RecordingState.Active ||
                     recState is RecorderController.RecordingState.Probing,
-                enter = fadeIn(tween(200)),
-                exit = fadeOut(tween(150)),
+                enter = fadeIn(tween(450)) + slideInVertically(tween(480)) { it / 3 },
+                exit = fadeOut(tween(320)) + slideOutVertically(tween(360)) { it / 3 },
             ) {
                 Column(modifier = Modifier.padding(top = 16.dp)) {
                     LiveLevelMeter(
@@ -756,6 +757,11 @@ private fun RecordsList(
                     onTap = { onTapRow(rec) },
                     onLongPress = { onLongPress(rec) },
                     onSwipeDelete = { onSwipeDelete(rec) },
+                    modifier = Modifier.animateItem(
+                        fadeInSpec = tween(380),
+                        fadeOutSpec = tween(300),
+                        placementSpec = tween(420),
+                    ),
                 )
             }
         }
@@ -789,6 +795,7 @@ private fun RowSwipeable(
     onTap: () -> Unit,
     onLongPress: () -> Unit,
     onSwipeDelete: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val dismissState = rememberSwipeToDismissBoxState(
         confirmValueChange = { value ->
@@ -803,7 +810,7 @@ private fun RowSwipeable(
         enableDismissFromStartToEnd = false,
         enableDismissFromEndToStart = !inSelectionMode,
         backgroundContent = { SwipeBackground() },
-        modifier = Modifier.animateContentSize(),
+        modifier = modifier.animateContentSize(),
     ) {
         RecordingRow(
             rec = rec,
@@ -922,18 +929,9 @@ private val VOICE_MEMO_FMT =
 private fun isVoiceMemo(rec: CallRecord): Boolean = rec.mode == MODE_VOICE_MEMO
 
 private fun displayTitle(ctx: Context, rec: CallRecord): String {
-    // Prefer the AI-generated title from the transcript when present — for
-    // voice memos this turns "Голосовий запис · 28 квіт, 15:42" into
-    // something descriptive like "Список покупок і плани на вихідні".
-    // Cheap to extract: a single JSONObject parse, no full transcript load.
-    val aiTitle = TranscriptCodec.extractTitle(rec.transcript)
     if (isVoiceMemo(rec)) {
-        if (!aiTitle.isNullOrBlank()) return aiTitle
         val stamp = VOICE_MEMO_FMT.format(Instant.ofEpochMilli(rec.startedAt))
         return ctx.getString(R.string.voice_memo_subtitle_with_date, stamp)
-    }
-    if (rec.contactName == null && rec.contactNumber == null && !aiTitle.isNullOrBlank()) {
-        return aiTitle
     }
     return rec.contactName ?: rec.contactNumber ?: ctx.getString(R.string.voice_memo_title)
 }

@@ -24,8 +24,8 @@ android {
         applicationId = "com.coolappstore.evercallrecorder.by.svhp"
         minSdk = 31
         targetSdk = 36
-        versionCode = 6
-        versionName = "0.5.0"
+        versionCode = 7
+        versionName = "2.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true

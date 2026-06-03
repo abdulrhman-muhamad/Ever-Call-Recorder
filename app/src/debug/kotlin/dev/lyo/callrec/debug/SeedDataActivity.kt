@@ -96,25 +96,23 @@ class SeedDataActivity : Activity() {
                 number = null,
                 modeOverride = CallMonitorService.MODE_VOICE_MEMO,
                 strategy = Strategy.SingleMic,
-                transcript = VOICE_MEMO_GROCERY,
             ),
             Seed(
                 offsetMs = -3 * 60 * 60 * 1000L, // today, 3h ago
                 durSec = 222, // 3:42
-                name = "Андрій Коваленко",
+                name = "Andrew Kovalenko",
                 number = "+380671234567",
                 strategy = Strategy.DualUplinkDownlink,
                 favorite = true,
-                notes = "Обговорили ціну на партію. Він дзвонить завтра з рішенням.",
+                notes = "Discussed price for the batch. He calls tomorrow with a decision.",
             ),
             Seed(
                 offsetMs = -6 * 60 * 60 * 1000L, // today, 6h ago — phone call, new schema
                 durSec = 738, // 12:18
-                name = "Мама",
+                name = "Mom",
                 number = "+380505551234",
                 strategy = Strategy.DualUplinkDownlink,
                 favorite = true,
-                transcript = MAMA_TRANSCRIPT,
             ),
             Seed(
                 offsetMs = -8 * 60 * 60 * 1000L, // today, 8h ago — voice memo (no transcript yet)
@@ -132,12 +130,11 @@ class SeedDataActivity : Activity() {
                 number = null,
                 modeOverride = CallMonitorService.MODE_VOICE_MEMO,
                 strategy = Strategy.SingleMic,
-                transcript = MEETING_TRANSCRIPT,
             ),
             Seed(
                 offsetMs = -1 * day - 7 * 60 * 60 * 1000L, // yesterday
                 durSec = 321,
-                name = "Олена (Моно)",
+                name = "Elena (Mono)",
                 number = "+380442000001",
                 strategy = Strategy.SingleVoiceCallStereo,
             ),
@@ -156,21 +153,20 @@ class SeedDataActivity : Activity() {
                 number = null,
                 modeOverride = CallMonitorService.MODE_VOICE_MEMO,
                 strategy = Strategy.SingleMic,
-                transcript = INTERVIEW_TRANSCRIPT,
-                notes = "Інтервʼю з кандидатом на позицію Backend Lead.",
+                notes = "Interview with candidate for Backend Lead position.",
             ),
             Seed(
                 offsetMs = -3 * day,
                 durSec = 534, // 8:54
-                name = "Тарас",
+                name = "Taras",
                 number = "+380963141592",
                 strategy = Strategy.DualUplinkDownlink,
-                notes = "Домовились на четвер о 16:00.",
+                notes = "Agreed on Thursday at 4:00 PM.",
             ),
             Seed(
                 offsetMs = -4 * day,
                 durSec = 1331, // 22:11
-                name = "Марина (HR)",
+                name = "Marina (HR)",
                 number = "+380957708888",
                 strategy = Strategy.DualUplinkDownlink,
             ),
@@ -182,19 +178,18 @@ class SeedDataActivity : Activity() {
                 number = null,
                 modeOverride = CallMonitorService.MODE_VOICE_MEMO,
                 strategy = Strategy.SingleMic,
-                transcript = LECTURE_TRANSCRIPT,
             ),
             Seed(
                 offsetMs = -10 * day,
                 durSec = 92,
-                name = "Стоматолог",
+                name = "Dentist",
                 number = "+380445550099",
                 strategy = Strategy.SingleMic,
             ),
             Seed(
                 offsetMs = -22 * day,
                 durSec = 34,
-                name = "Доставка Нової Пошти",
+                name = "Nova Post Delivery",
                 number = "+380500304400",
                 strategy = Strategy.SingleMic,
             ),
@@ -225,7 +220,6 @@ class SeedDataActivity : Activity() {
                     downlinkPath = downlink?.absolutePath,
                     notes = seed.notes,
                     favorite = seed.favorite,
-                    transcript = seed.transcript,
                 ),
             )
         }
@@ -240,7 +234,6 @@ class SeedDataActivity : Activity() {
         val strategy: Strategy,
         val favorite: Boolean = false,
         val notes: String? = null,
-        val transcript: String? = null,
         /** Override the persisted `mode` field — e.g. [CallMonitorService.MODE_VOICE_MEMO]. */
         val modeOverride: String? = null,
     )
@@ -281,122 +274,5 @@ class SeedDataActivity : Activity() {
 
     companion object {
         private const val TAG = "SeedData"
-
-        // Phone call with the two canonical speakers — exercises the "self
-        // bubble right + other bubble left" Telegram-style chat layout.
-        private val MAMA_TRANSCRIPT = """
-        {
-          "title": "Дзвінок мамі: вареники на вихідні",
-          "language": "uk",
-          "duration_sec": 738,
-          "speakers": [
-            {"id": "ME", "label": "Я"},
-            {"id": "THEM", "label": "Мама"}
-          ],
-          "segments": [
-            {"start": 0.0, "end": 2.4, "speaker_id": "ME", "text": "Привіт, мам! Ти як?", "tone": "friendly", "non_speech": []},
-            {"start": 2.5, "end": 5.8, "speaker_id": "THEM", "text": "Привіт, синочку. Все добре, а в тебе?", "tone": "friendly", "non_speech": []},
-            {"start": 6.0, "end": 9.2, "speaker_id": "ME", "text": "Все ок. Завтра приїжджаю на вихідні.", "tone": "neutral", "non_speech": []},
-            {"start": 9.5, "end": 12.0, "speaker_id": "THEM", "text": "О, чудово! Я вареники зроблю.", "tone": "excited", "non_speech": ["laugh"]},
-            {"start": 12.4, "end": 14.6, "speaker_id": "ME", "text": "Дякую! З картоплею, як завжди?", "tone": "friendly", "non_speech": []},
-            {"start": 14.8, "end": 17.5, "speaker_id": "THEM", "text": "І з вишнею ще трошки — як любиш.", "tone": "friendly", "non_speech": []},
-            {"start": 18.0, "end": 21.4, "speaker_id": "ME", "text": "Тоді привезу домашнього сиру з ринку.", "tone": "friendly", "non_speech": []},
-            {"start": 21.6, "end": 25.0, "speaker_id": "THEM", "text": "Не хвилюйся, у мене вже є. Краще щось солодке візьми.", "tone": "neutral", "non_speech": []}
-          ]
-        }
-        """.trimIndent()
-
-        // Voice memo, single speaker — exercises the smart-title fallback in
-        // the recordings list ("Список покупок…" replaces "Голосовий запис · …").
-        private val VOICE_MEMO_GROCERY = """
-        {
-          "title": "Список покупок і нагадування на завтра",
-          "language": "uk",
-          "duration_sec": 87,
-          "speakers": [
-            {"id": "A", "label": "Я"}
-          ],
-          "segments": [
-            {"start": 0.0, "end": 4.2, "speaker_id": "A", "text": "Так, треба запамʼятати: молоко, хліб, сир.", "tone": "neutral", "non_speech": []},
-            {"start": 4.5, "end": 9.0, "speaker_id": "A", "text": "Ще зайти у Нову Пошту забрати посилку, відділення сім.", "tone": "neutral", "non_speech": []},
-            {"start": 9.2, "end": 13.6, "speaker_id": "A", "text": "Передзвонити Олі завтра по обіді про вечерю.", "tone": "neutral", "non_speech": []},
-            {"start": 13.8, "end": 18.0, "speaker_id": "A", "text": "І не забути вимкнути воду у ванній перед відʼїздом.", "tone": "questioning", "non_speech": ["sigh"]}
-          ]
-        }
-        """.trimIndent()
-
-        // 4-speaker meeting — exercises the curated palette where Я, Оля,
-        // Микола, Іван each get a distinct categorical colour.
-        private val MEETING_TRANSCRIPT = """
-        {
-          "title": "Планування Q2: бюджет і команда",
-          "language": "uk",
-          "duration_sec": 1245,
-          "speakers": [
-            {"id": "A", "label": "Я"},
-            {"id": "B", "label": "Оля"},
-            {"id": "C", "label": "Микола"},
-            {"id": "D", "label": "Іван"}
-          ],
-          "segments": [
-            {"start": 0.0, "end": 4.0, "speaker_id": "A", "text": "Окей, починаємо. Перший пункт — бюджет на Q2.", "tone": "neutral", "non_speech": []},
-            {"start": 4.5, "end": 9.5, "speaker_id": "B", "text": "Я підготувала табличку — ріст на 18% порівняно з Q1.", "tone": "neutral", "non_speech": []},
-            {"start": 9.8, "end": 14.0, "speaker_id": "C", "text": "Це з врахуванням нових двох інженерів?", "tone": "questioning", "non_speech": []},
-            {"start": 14.2, "end": 17.0, "speaker_id": "B", "text": "Так, обидва на onboarding з квітня.", "tone": "neutral", "non_speech": []},
-            {"start": 17.5, "end": 23.0, "speaker_id": "D", "text": "Я б ще заклав резерв на маркетинг — у нас лонч у червні.", "tone": "neutral", "non_speech": []},
-            {"start": 23.5, "end": 27.0, "speaker_id": "A", "text": "Скільки приблизно?", "tone": "questioning", "non_speech": []},
-            {"start": 27.2, "end": 31.5, "speaker_id": "D", "text": "Тисяч пʼятдесят-сімдесят. Точніше скажу за тиждень.", "tone": "neutral", "non_speech": []},
-            {"start": 32.0, "end": 36.0, "speaker_id": "C", "text": "Тоді треба урізати десь інше або зросте бернер-рейт.", "tone": "tense", "non_speech": []},
-            {"start": 36.5, "end": 41.0, "speaker_id": "B", "text": "Можу зрізати з консультантів, ми давно ними не користуємось.", "tone": "neutral", "non_speech": []},
-            {"start": 41.5, "end": 44.0, "speaker_id": "A", "text": "Звучить розумно. Закриваємо це питання.", "tone": "friendly", "non_speech": []},
-            {"start": 44.5, "end": 48.0, "speaker_id": "D", "text": "Дякую. Наступний пункт — найм senior backend.", "tone": "neutral", "non_speech": []}
-          ]
-        }
-        """.trimIndent()
-
-        // 3-speaker interview — Я (інтервʼюер), кандидат, технічний скрінер.
-        private val INTERVIEW_TRANSCRIPT = """
-        {
-          "title": "Інтервʼю: Backend Lead, technical screen",
-          "language": "uk",
-          "duration_sec": 2148,
-          "speakers": [
-            {"id": "A", "label": "Я"},
-            {"id": "B", "label": "Кандидат"},
-            {"id": "C", "label": "Денис (tech)"}
-          ],
-          "segments": [
-            {"start": 0.0, "end": 4.0, "speaker_id": "A", "text": "Доброго дня! Дякуємо що знайшли час.", "tone": "friendly", "non_speech": []},
-            {"start": 4.5, "end": 7.0, "speaker_id": "B", "text": "Дякую за запрошення.", "tone": "friendly", "non_speech": []},
-            {"start": 7.5, "end": 12.0, "speaker_id": "A", "text": "Розкажіть коротко про останній проєкт — що драйвило архітектурні рішення.", "tone": "neutral", "non_speech": []},
-            {"start": 12.5, "end": 28.0, "speaker_id": "B", "text": "Останні два роки був на Kafka pipeline для рекомендаційної системи. Головний челендж — exactly-once delivery при 50k events/sec. Перейшли з naive consumer на transactional Kafka Streams.", "tone": "neutral", "non_speech": []},
-            {"start": 28.5, "end": 33.0, "speaker_id": "C", "text": "А як вирішували backpressure від downstream?", "tone": "questioning", "non_speech": []},
-            {"start": 33.5, "end": 47.0, "speaker_id": "B", "text": "Bounded queue з drop-oldest для non-critical events, плюс окремий high-priority lane. Метрики p99 — 80мс на хот-патах.", "tone": "neutral", "non_speech": []},
-            {"start": 47.5, "end": 51.0, "speaker_id": "C", "text": "Цікаво. А моніторинг — Prometheus, чи щось своє?", "tone": "neutral", "non_speech": []},
-            {"start": 51.5, "end": 58.0, "speaker_id": "B", "text": "Prometheus + custom OpenTelemetry exporter. Панелі в Grafana, alerting через PagerDuty.", "tone": "neutral", "non_speech": []},
-            {"start": 58.5, "end": 62.0, "speaker_id": "A", "text": "Звучить солідно. Перейдемо до системного дизайну?", "tone": "friendly", "non_speech": []}
-          ]
-        }
-        """.trimIndent()
-
-        // Lecture-style voice memo, single speaker — palette stays minimal,
-        // smart-title shines as the row label.
-        private val LECTURE_TRANSCRIPT = """
-        {
-          "title": "Лекція з алгоритмів: graph traversal",
-          "language": "uk",
-          "duration_sec": 540,
-          "speakers": [
-            {"id": "A", "label": "Я"}
-          ],
-          "segments": [
-            {"start": 0.0, "end": 6.0, "speaker_id": "A", "text": "Окей, сьогоднішня тема — обхід графів і коли який алгоритм правильний.", "tone": "neutral", "non_speech": []},
-            {"start": 6.5, "end": 14.0, "speaker_id": "A", "text": "BFS — це коли вам треба найкоротший шлях у unweighted graph. DFS — коли треба знайти ВСІ шляхи або обійти зі стеком.", "tone": "neutral", "non_speech": []},
-            {"start": 14.5, "end": 22.0, "speaker_id": "A", "text": "Dijkstra — обовʼязково для weighted graph з невідʼємними вагами. Bellman-Ford — якщо вони можуть бути відʼємними.", "tone": "neutral", "non_speech": []},
-            {"start": 22.5, "end": 30.0, "speaker_id": "A", "text": "A-зірка — коли у вас є гарна евристика. На практиці це 90% navigation і pathfinding у іграх.", "tone": "neutral", "non_speech": []},
-            {"start": 30.5, "end": 36.0, "speaker_id": "A", "text": "До екзамену — підготуйте візуалізацію кожного на маленькому графі. На наступній парі — задачі.", "tone": "neutral", "non_speech": ["pause"]}
-          ]
-        }
-        """.trimIndent()
     }
 }

@@ -31,7 +31,6 @@ data class CallRecord(
     @ColumnInfo("downlink_path") val downlinkPath: String?,
     @ColumnInfo("notes") val notes: String? = null,
     @ColumnInfo("favorite") val favorite: Boolean = false,
-    @ColumnInfo("transcript") val transcript: String? = null,
 )
 
 @Dao
@@ -64,9 +63,6 @@ interface CallDao {
 
     @Query("UPDATE calls SET favorite = :fav WHERE callId = :id")
     suspend fun setFavorite(id: String, fav: Boolean)
-
-    @Query("UPDATE calls SET transcript = :transcript WHERE callId = :id")
-    suspend fun setTranscript(id: String, transcript: String?)
 
     @Query("DELETE FROM calls WHERE callId = :id")
     suspend fun delete(id: String)
@@ -136,21 +132,14 @@ val MIGRATION_1_2: Migration = object : Migration(1, 2) {
     }
 }
 
-// v2→v3: adds nullable transcript column (lazily filled by Whisper on demand).
-val MIGRATION_2_3: Migration = object : Migration(2, 3) {
-    override fun migrate(db: SupportSQLiteDatabase) {
-        db.execSQL("ALTER TABLE calls ADD COLUMN transcript TEXT")
-    }
-}
-
-@Database(entities = [CallRecord::class], version = 3, exportSchema = true)
+@Database(entities = [CallRecord::class], version = 2, exportSchema = true)
 abstract class RecordingsDb : RoomDatabase() {
     abstract fun calls(): CallDao
 
     companion object {
         fun create(ctx: Context): RecordingsDb =
             Room.databaseBuilder(ctx, RecordingsDb::class.java, "callrec.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2)
                 .fallbackToDestructiveMigrationOnDowngrade(dropAllTables = true)
                 .build()
     }

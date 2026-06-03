@@ -21,6 +21,8 @@ import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import com.coolappstore.evercallrecorder.by.svhp.recorder.AccessibilityRecorder
+import com.coolappstore.evercallrecorder.by.svhp.recorder.Strategy
 import com.coolappstore.evercallrecorder.by.svhp.ui.DummyActivity
 
 /**
@@ -132,14 +134,59 @@ class CallMonitorService : LifecycleService() {
     }
 
     private suspend fun kickoff() {
-        L.i("Service", "kickoff() begin")
+        L.i("Service", "kickoff() begin mode=${container.recordingMode.value}")
         var success = false
         try {
+            val mode = container.recordingMode.value
+            if (mode == com.coolappstore.evercallrecorder.by.svhp.settings.RecordingMode.ACCESSIBILITY) {
+                // Accessibility mode: record directly via AudioRecord, no Shizuku needed.
+                if (!manualMode) {
+                    val am = getSystemService(android.content.Context.AUDIO_SERVICE)
+                        as android.media.AudioManager
+                    if (am.mode != android.media.AudioManager.MODE_IN_CALL &&
+                        am.mode != android.media.AudioManager.MODE_IN_COMMUNICATION
+                    ) {
+                        withTimeoutOrNull(6_000) { awaitVoiceMode(am) }
+                    }
+                }
+                val callId = container.storage.newCallId()
+                currentCallId = callId
+                container.accessibilityRecorder.start(callId, voiceMemo = manualMode)
+                // Observe accessibility recorder state for notification + DB persistence
+                lifecycleScope.launch {
+                    container.accessibilityRecorder.state.collectLatest { rs ->
+                        val fakeOutcome: RecorderController.Outcome = when (rs) {
+                            is AccessibilityRecorder.RecordingState.Active -> {
+                                val single = rs.outcome as? AccessibilityRecorder.Outcome.Single
+                                if (single != null) {
+                                    RecorderController.Outcome.Single(single.file, single.strategy)
+                                } else {
+                                    RecorderController.Outcome.Failed("…")
+                                }
+                            }
+                            is AccessibilityRecorder.RecordingState.Probing ->
+                                RecorderController.Outcome.Failed("probing:${rs.source}")
+                            is AccessibilityRecorder.RecordingState.Failed ->
+                                RecorderController.Outcome.Failed(rs.reason)
+                            AccessibilityRecorder.RecordingState.Idle ->
+                                RecorderController.Outcome.Failed("…")
+                        }
+                        startForegroundCompat(RecordingNotification.build(this@CallMonitorService, fakeOutcome))
+                        if (rs is AccessibilityRecorder.RecordingState.Active) {
+                            val single = rs.outcome as? AccessibilityRecorder.Outcome.Single
+                                ?: return@collectLatest
+                            persistOutcomeAccessibility(single)
+                        }
+                    }
+                }
+                success = true
+                return
+            }
+
+            // Shizuku mode
             val client = container.shizuku
             client.attach()
             client.refresh()
-            // Wait for Bound state — subsumes bind + version match + permission OK in one signal.
-            // The DaemonHealth.Bound data class carries the IRecorderService directly.
             val svc = withTimeoutOrNull(12_000) {
                 client.health.filterIsInstance<DaemonHealth.Bound>().first().service
             }
@@ -154,11 +201,11 @@ class CallMonitorService : LifecycleService() {
                 if (am.mode != android.media.AudioManager.MODE_IN_CALL &&
                     am.mode != android.media.AudioManager.MODE_IN_COMMUNICATION
                 ) {
-                    val mode = withTimeoutOrNull(6_000) { awaitVoiceMode(am) }
-                    if (mode == null) {
+                    val mode2 = withTimeoutOrNull(6_000) { awaitVoiceMode(am) }
+                    if (mode2 == null) {
                         L.w("Service", "kickoff: still MODE_NORMAL after 6 s — proceeding anyway")
                     } else {
-                        L.i("Service", "kickoff: AudioManager.mode=$mode (audio path live)")
+                        L.i("Service", "kickoff: AudioManager.mode=$mode2 (audio path live)")
                     }
                 } else {
                     L.i("Service", "kickoff: AudioManager.mode already live (${am.mode})")
@@ -176,6 +223,26 @@ class CallMonitorService : LifecycleService() {
                 recordingStarted = false
             }
         }
+    }
+
+    private suspend fun persistOutcomeAccessibility(outcome: AccessibilityRecorder.Outcome.Single) {
+        val id = currentCallId ?: return
+        val started = callStartedAt ?: System.currentTimeMillis().also { callStartedAt = it }
+        val number = initialNumber?.takeIf { it.isNotBlank() }
+        val name = number?.let { ContactResolver.resolveName(this, it) }
+        val tag = if (manualMode) MODE_VOICE_MEMO else outcome.strategy.name
+        container.db.calls().upsert(
+            CallRecord(
+                callId = id,
+                startedAt = started,
+                endedAt = null,
+                contactNumber = number,
+                contactName = name,
+                mode = tag,
+                uplinkPath = outcome.file.path,
+                downlinkPath = null,
+            ),
+        )
     }
 
     private suspend fun persistOutcome(outcome: RecorderController.Outcome) {
@@ -224,17 +291,41 @@ class CallMonitorService : LifecycleService() {
         L.i("Service", "stopRecording reason=$reason")
         val id = currentCallId
         val startedAt = callStartedAt
-        // Snapshot manual-mode before any sibling intent can flip it. The
-        // post-stop bookkeeping below depends on knowing whether this was a
-        // voice-memo session (skip CallLog lookup, persist as "VoiceMemo").
         val wasVoiceMemo = manualMode
         currentCallId = null
         callStartedAt = null
         initialNumber = null
         recordingStarted = false
-        val appCtx = applicationContext // capture before scope hop
-        // Block #1 — must finish on lifecycleScope to keep FGS alive while
-        // the encoder finalises. After this returns, files are on disk.
+        val appCtx = applicationContext
+
+        val mode = container.recordingMode.value
+        if (mode == com.coolappstore.evercallrecorder.by.svhp.settings.RecordingMode.ACCESSIBILITY) {
+            val accOutcome = container.accessibilityRecorder.stop()
+            if (id == null || accOutcome == null || accOutcome is AccessibilityRecorder.Outcome.Failed) return
+            val single = accOutcome as? AccessibilityRecorder.Outcome.Single ?: return
+            container.appScope.launch {
+                val tag = if (wasVoiceMemo) MODE_VOICE_MEMO else single.strategy.name
+                runCatching { container.db.calls().updateOutcome(id, tag, single.file.path, null) }
+                container.db.calls().markEnded(id, System.currentTimeMillis())
+                runCatching {
+                    val saved = container.db.calls().byId(id)
+                    if (saved != null) CompletedRecordingNotification.show(appCtx, saved)
+                }.onFailure { L.w("Service", "completed-notif failed: ${it.message}") }
+                if (!wasVoiceMemo) runCatching {
+                    val existing = container.db.calls().byId(id)
+                    if (existing?.contactNumber.isNullOrBlank() && startedAt != null) {
+                        val num = CallLogResolver.mostRecentNumber(appCtx, startedAt)
+                        if (!num.isNullOrBlank()) {
+                            val name = ContactResolver.resolveName(appCtx, num)
+                            container.db.calls().updateContact(id, num, name)
+                        }
+                    }
+                }.onFailure { L.w("Service", "post-mortem contact lookup failed: ${it.message}") }
+            }
+            return
+        }
+
+        // Shizuku mode
         val outcome = container.recorder.stop()
         if (id == null || outcome == null || outcome is RecorderController.Outcome.Failed) {
             return
@@ -336,9 +427,11 @@ class CallMonitorService : LifecycleService() {
         // after our own stopSelf() — by which point recording.stop() has
         // already finished synchronously inside the lifecycleScope path
         // above. This launch is the safety net for OEM-killed services.
-        container.appScope.launch { stopRecordingAndAwait("destroy") }
-        container.shizuku.detach()
-        container.shizuku.unbind(remove = false)
+        container.appScope.launch {
+            stopRecordingAndAwait("destroy")
+        }
+        runCatching { container.shizuku.detach() }
+        runCatching { container.shizuku.unbind(remove = false) }
         super.onDestroy()
     }
 

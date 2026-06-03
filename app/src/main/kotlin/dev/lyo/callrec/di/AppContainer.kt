@@ -4,10 +4,12 @@ package com.coolappstore.evercallrecorder.by.svhp.di
 import android.content.Context
 import androidx.datastore.preferences.preferencesDataStore
 import com.coolappstore.evercallrecorder.by.svhp.playback.MediaSessionHolder
+import com.coolappstore.evercallrecorder.by.svhp.recorder.AccessibilityRecorder
 import com.coolappstore.evercallrecorder.by.svhp.recorder.CapabilitiesStore
 import com.coolappstore.evercallrecorder.by.svhp.recorder.RecorderController
 import com.coolappstore.evercallrecorder.by.svhp.recorder.ShizukuClient
 import com.coolappstore.evercallrecorder.by.svhp.settings.RecordingFormat
+import com.coolappstore.evercallrecorder.by.svhp.settings.RecordingMode
 import com.coolappstore.evercallrecorder.by.svhp.storage.RecordingStorage
 import com.coolappstore.evercallrecorder.by.svhp.storage.RecordingsDb
 import kotlinx.coroutines.CoroutineScope
@@ -20,16 +22,8 @@ import com.coolappstore.evercallrecorder.by.svhp.settings.AppSettings
 
 private val Context.dataStore by preferencesDataStore(name = "callrec.settings")
 
-/**
- * Hand-rolled DI container. One instance per process, owned by [App].
- *
- * Lazy fields ensure that nothing touches Shizuku, the audio HAL, or
- * RoomDatabase on the cold path of Application.onCreate — we want the splash
- * to disappear quickly. Heavy work happens on first access from a coroutine.
- */
 class AppContainer(private val ctx: Context) {
 
-    /** Long-lived scope for foreground services and one-shot persistence work. */
     val appScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     val settings: AppSettings by lazy { AppSettings(ctx.dataStore) }
@@ -47,20 +41,19 @@ class AppContainer(private val ctx: Context) {
 
     val capabilities: CapabilitiesStore by lazy { CapabilitiesStore(ctx.applicationContext) }
 
-    /**
-     * Hot StateFlow mirror of the recording-format setting. The earlier
-     * implementation called `runBlocking(Dispatchers.IO) { settings.format.first() }`
-     * inside the recorder's `formatProvider`, which (a) blocks the calling
-     * coroutine — including the lifecycle coroutine of CallMonitorService when
-     * a call starts — and (b) re-reads the protobuf on every call. Caching
-     * once via [stateIn] eliminates the block; updates from Settings still
-     * propagate immediately through the same StateFlow.
-     */
     val recordingFormat: StateFlow<RecordingFormat> by lazy {
         settings.format.stateIn(
             scope = appScope,
             started = SharingStarted.Eagerly,
             initialValue = RecordingFormat.AAC,
+        )
+    }
+
+    val recordingMode: StateFlow<RecordingMode> by lazy {
+        settings.recordingMode.stateIn(
+            scope = appScope,
+            started = SharingStarted.Eagerly,
+            initialValue = RecordingMode.SHIZUKU,
         )
     }
 
@@ -70,15 +63,17 @@ class AppContainer(private val ctx: Context) {
             storage = storage,
             capabilities = capabilities,
             scope = appScope,
-            // Non-blocking — reads cached StateFlow value.
             formatProvider = { recordingFormat.value },
         )
     }
 
-    /**
-     * One MediaSession + MediaStyle notification host for the whole app.
-     * Owned at container level so it survives across PlaybackScreen
-     * recompositions and back-stack navigation.
-     */
+    val accessibilityRecorder: AccessibilityRecorder by lazy {
+        AccessibilityRecorder(
+            storage = storage,
+            scope = appScope,
+            formatProvider = { recordingFormat.value },
+        )
+    }
+
     val mediaSession: MediaSessionHolder by lazy { MediaSessionHolder(ctx.applicationContext) }
 }

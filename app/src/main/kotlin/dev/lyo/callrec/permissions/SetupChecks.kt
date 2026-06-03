@@ -3,47 +3,38 @@ package com.coolappstore.evercallrecorder.by.svhp.permissions
 
 import android.content.Context
 import android.provider.Settings
+import com.coolappstore.evercallrecorder.by.svhp.accessibility.AccessibilityHelper
 import com.coolappstore.evercallrecorder.by.svhp.di.AppContainer
 import com.coolappstore.evercallrecorder.by.svhp.recorder.DaemonHealth
-import com.coolappstore.evercallrecorder.by.svhp.accessibility.AccessibilityHelper
+import com.coolappstore.evercallrecorder.by.svhp.settings.RecordingMode
 
-/**
- * Single source of truth for "is the app set up well enough to record?".
- *
- * The mandatory prerequisites are:
- *   - Shizuku ready (UserService can be bound)
- *   - Runtime permissions (RECORD_AUDIO, READ_PHONE_STATE, POST_NOTIFICATIONS)
- *   - canDrawOverlays (SYSTEM_ALERT_WINDOW) — required for the auto-record
- *     path: the OverlayTrick briefly adds an invisible window so Android 14+
- *     allows starting a foreground service of type=microphone from a
- *     BroadcastReceiver. Without it auto-detect is dead in the water on
- *     Pixel/Samsung.
- *   - Battery exemption — without this Doze/Freecess kills our FGS partway
- *     through long calls.
- *
- * Accessibility is **optional** as of v0.2. We keep the field on this struct
- * so the UI can show an "Optional fallback" row, but [allReady] does not
- * include it.
- */
 data class SetupStatus(
+    val mode: RecordingMode,
+    // Shizuku-mode fields
     val shizukuReady: Boolean,
+    // Accessibility-mode fields
+    val accessibilityEnabled: Boolean,
+    // Common fields
     val runtimePermsGranted: Boolean,
     val overlayGranted: Boolean,
     val batteryExempt: Boolean,
-    val accessibilityEnabled: Boolean,
 ) {
-    val allReady: Boolean get() =
-        shizukuReady && runtimePermsGranted && overlayGranted && batteryExempt
+    val allReady: Boolean get() = when (mode) {
+        RecordingMode.SHIZUKU -> shizukuReady && runtimePermsGranted && overlayGranted && batteryExempt
+        RecordingMode.ACCESSIBILITY -> accessibilityEnabled && runtimePermsGranted && overlayGranted && batteryExempt
+    }
 
     companion object {
         fun probe(ctx: Context, container: AppContainer): SetupStatus {
-            container.shizuku.refresh()
+            val mode = container.recordingMode.value
+            if (mode == RecordingMode.SHIZUKU) container.shizuku.refresh()
             return SetupStatus(
+                mode = mode,
                 shizukuReady = container.shizuku.health.value is DaemonHealth.Bound,
+                accessibilityEnabled = AccessibilityHelper.isEnabled(ctx),
                 runtimePermsGranted = AppPermissions.allGranted(ctx),
                 overlayGranted = Settings.canDrawOverlays(ctx),
                 batteryExempt = BatteryOptimizations.isIgnoring(ctx),
-                accessibilityEnabled = AccessibilityHelper.isEnabled(ctx),
             )
         }
     }

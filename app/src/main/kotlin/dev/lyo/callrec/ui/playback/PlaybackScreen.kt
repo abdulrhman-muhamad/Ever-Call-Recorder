@@ -4,17 +4,18 @@ package com.coolappstore.evercallrecorder.by.svhp.ui.playback
 import android.media.MediaPlayer
 import android.media.PlaybackParams
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.EaseInOutCubic
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -47,7 +48,6 @@ import androidx.compose.material3.ButtonGroup
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilledIconButton
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
@@ -78,7 +78,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -103,12 +102,7 @@ import java.io.File
 import java.util.Locale
 import kotlin.math.max
 import kotlin.math.roundToLong
-import com.coolappstore.evercallrecorder.by.svhp.codec.AudioMixer
 import com.coolappstore.evercallrecorder.by.svhp.playback.ScreenPlaybackController
-import com.coolappstore.evercallrecorder.by.svhp.transcription.TranscribeJob
-import com.coolappstore.evercallrecorder.by.svhp.transcription.TranscribeState
-import com.coolappstore.evercallrecorder.by.svhp.transcription.Transcript
-import com.coolappstore.evercallrecorder.by.svhp.transcription.TranscriptCodec
 
 private val SPEED_OPTIONS = listOf(0.5f, 1f, 1.5f, 2f)
 
@@ -507,64 +501,6 @@ fun PlaybackScreen(
                 },
             )
 
-            // ─── Transcription block (cloud STT via OpenAI-compatible API)
-            rec?.let { r ->
-                // For dual recordings we send a mono RMS-normalised mix.
-                // Gemini auto-downmixes any stereo input (per their docs), so
-                // pan is wasted — the real fix is balancing per-side levels
-                // before the sum so the louder mic-uplink doesn't drown out
-                // the post-codec downlink and let the model "hear" only one
-                // speaker. Mixing decodes both AAC tracks via MediaCodec —
-                // seconds of work for a 22-min call. Run on Dispatchers.Default
-                // and let the UI render before the mix is ready; until then we
-                // fall back to whichever side survives, so the section is
-                // usable immediately even on records where one side was
-                // dropped by the silence-downgrade.
-                val pri = primaryPath
-                val sttFile by produceState<java.io.File?>(
-                    initialValue = pri?.let { java.io.File(it) },
-                    key1 = r.callId,
-                    key2 = primaryPath,
-                    key3 = secondaryPath,
-                ) {
-                    val priFile = pri?.let { java.io.File(it) } ?: return@produceState
-                    val sec = secondaryPath ?: return@produceState
-                    val secFile = java.io.File(sec)
-                    value = withContext(Dispatchers.Default) {
-                        val mixed = java.io.File(ctx.cacheDir, "stt/${r.callId}-stt.wav")
-                        if (mixed.exists() &&
-                            mixed.lastModified() >= maxOf(priFile.lastModified(), secFile.lastModified())
-                        ) mixed
-                        else {
-                            mixed.parentFile?.mkdirs()
-                            AudioMixer
-                                .mixNormalizedMonoForStt(priFile, secFile, mixed) ?: priFile
-                        }
-                    }
-                }
-                val sttPath = sttFile?.absolutePath ?: pri ?: return@let
-                TranscriptionSection(
-                    container = container,
-                    callId = callId,
-                    audioPath = sttPath,
-                    persistedTranscript = r.transcript,
-                    onSeek = { ms ->
-                        val target = ms.coerceIn(0, totalMs)
-                        runCatching { if (preparedA) playerA.seekTo(target.coerceAtMost(durationA)) }
-                        runCatching { if (preparedB) playerB.seekTo(target.coerceAtMost(durationB)) }
-                        positionMs = target
-                        // Tap-to-seek + auto-play feels more natural for a
-                        // transcript than tap-and-still-paused. Pausing later
-                        // is one tap away on the play/pause button.
-                        if (!playing && preparedA) {
-                            runCatching { playerA.start() }
-                            if (preparedB) runCatching { playerB.start() }
-                            playing = true
-                        }
-                    },
-                )
-            }
-
             rec?.let { MetaCard(it, isDual) }
         }
     }
@@ -809,6 +745,7 @@ private fun TransportRow(
         // inherited from MaterialExpressiveTheme.
         val targetCorner by animateDpAsState(
             targetValue = if (playing) 22.dp else 36.dp,
+            animationSpec = tween(400, easing = androidx.compose.animation.core.EaseInOutCubic),
             label = "play-pause-corner",
         )
         FilledIconButton(
@@ -823,7 +760,8 @@ private fun TransportRow(
             AnimatedContent(
                 targetState = playing,
                 transitionSpec = {
-                    (scaleIn() + fadeIn()) togetherWith (scaleOut() + fadeOut())
+                    (scaleIn(tween(350), initialScale = 0.7f) + fadeIn(tween(320))) togetherWith
+                        (scaleOut(tween(280), targetScale = 0.7f) + fadeOut(tween(250)))
                 },
                 label = "play-pause",
             ) { isPlaying ->
@@ -955,389 +893,4 @@ private fun formatBytes(b: Long): String {
 private fun formatSpeed(rate: Float): String =
     if (rate == rate.toInt().toFloat()) "${rate.toInt()}x" else "${rate}x"
 
-// ─── Transcription UI (added by transcription agent) ──────────────────────────
 
-@Composable
-private fun TranscriptionSection(
-    container: AppContainer,
-    callId: String,
-    audioPath: String,
-    persistedTranscript: String?,
-    onSeek: (ms: Int) -> Unit,
-) {
-    val ctx = LocalContext.current
-    val job = remember(callId) {
-        TranscribeJob(container)
-    }
-    val state by job.state.collectAsState()
-    val rawJson: String? = when (val s = state) {
-        is TranscribeState.Done -> s.text
-        else -> persistedTranscript
-    }
-    val parsed = remember(rawJson) { TranscriptCodec.parse(rawJson) }
-
-    // No surrounding Card — the transcript chat lays out flush with the
-    // surrounding playback content so each segment bubble carries its own
-    // surface, the way Telegram's main feed does. Wrapping it in another
-    // tonal Card was eating ~32 dp of horizontal/vertical padding for no
-    // gain — the bubbles already provide the necessary visual grouping.
-    Column(modifier = Modifier.fillMaxWidth()) {
-        FilledTonalButton(
-            onClick = { job.start(callId, audioPath) },
-            enabled = state !is TranscribeState.Running,
-        ) {
-            Icon(
-                Icons.AutoMirrored.Outlined.Article,
-                contentDescription = null,
-                modifier = Modifier.size(18.dp),
-            )
-            Spacer(Modifier.size(8.dp))
-            Text(stringResource(R.string.playback_transcribe))
-        }
-
-        when (val s = state) {
-            is TranscribeState.Running -> {
-                Spacer(Modifier.height(10.dp))
-                Text(
-                    stringResource(R.string.playback_transcribe_running),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                LinearWavyProgressIndicator(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 8.dp),
-                )
-            }
-            is TranscribeState.Error -> {
-                Spacer(Modifier.height(10.dp))
-                Text(
-                    s.message,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
-            else -> Unit
-        }
-
-        when {
-            parsed != null && parsed.segments.isNotEmpty() -> {
-                if (!parsed.title.isNullOrBlank()) {
-                    Spacer(Modifier.height(12.dp))
-                    Text(
-                        parsed.title,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                }
-                Spacer(Modifier.height(12.dp))
-                TranscriptView(parsed, onSeek)
-            }
-            !rawJson.isNullOrBlank() -> {
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    rawJson,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-            }
-        }
-    }
-}
-
-/**
- * Renders the transcript as a Telegram-style chat: the user-side speaker
- * (id == "ME" or first speaker in calls) is right-aligned without an avatar
- * — like own messages in a messenger — while every other speaker gets a
- * coloured initial-avatar on the left, shown only on the first bubble of a
- * consecutive group. Bubble shape uses asymmetric rounded corners so the
- * "tail-side" corner is sharper, matching the canonical chat look while
- * staying inside Material 3's RoundedCornerShape vocabulary.
- */
-@Composable
-private fun TranscriptView(
-    transcript: Transcript,
-    onSeek: (ms: Int) -> Unit,
-) {
-    val accents = speakerAccents(transcript.speakers)
-    val labels = remember(transcript.speakers) {
-        transcript.speakers.associate { it.id to it.label }
-    }
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(2.dp),
-    ) {
-        var prevSpeakerId: String? = null
-        for ((idx, seg) in transcript.segments.withIndex()) {
-            val isFirstOfGroup = seg.speakerId != prevSpeakerId
-            ChatSegment(
-                seg = seg,
-                accent = accents[seg.speakerId] ?: SpeakerAccent.fallback(),
-                speakerLabel = labels[seg.speakerId] ?: legacyDisplayLabel(seg.speakerId),
-                isFirstOfGroup = isFirstOfGroup,
-                onSeek = onSeek,
-            )
-            prevSpeakerId = seg.speakerId
-            if (idx < transcript.segments.lastIndex &&
-                transcript.segments[idx + 1].speakerId != seg.speakerId
-            ) {
-                Spacer(Modifier.height(8.dp))
-            }
-        }
-    }
-}
-
-/**
- * Per-speaker accent — drives the avatar circle and the header tint above
- * the first bubble of a group. The bubble itself does NOT use these; it
- * stays neutral so the chat reads as a standard Telegram conversation
- * (colour lives on the avatar, the cloud is grey).
- */
-private data class SpeakerAccent(
-    val container: Color,
-    val onContainer: Color,
-    /** True for the user-side speaker — bubbles align right and skip the avatar. */
-    val isSelf: Boolean,
-) {
-    companion object {
-        @Composable
-        fun fallback() = SpeakerAccent(
-            container = MaterialTheme.colorScheme.surfaceContainerHighest,
-            onContainer = MaterialTheme.colorScheme.onSurface,
-            isSelf = false,
-        )
-    }
-}
-
-/**
- * Order in `speakers` drives palette assignment. The first speaker — by
- * convention "Я"/ME for phone calls or the dominant voice for voice memos —
- * gets `primaryContainer` from the active scheme and right alignment,
- * mirroring "own messages" in a chat client. Subsequent speakers each draw
- * from a curated 8-hue palette so even meetings with 4–5 distinct voices
- * stay visually unambiguous.
- *
- * Palette is held in the chat domain rather than `colorScheme` because M3
- * exposes only ~3 container roles — not enough for "categorical" colours.
- * Each entry has hand-tuned light/dark variants picked at HCT tones 90/30
- * so they read as soft pastels in light theme and deep saturated tones in
- * dark theme, with contrast-safe content colours on either side.
- */
-@Composable
-private fun speakerAccents(
-    speakers: List<Transcript.SpeakerInfo>,
-): Map<String, SpeakerAccent> {
-    val cs = MaterialTheme.colorScheme
-    val dark = androidx.compose.foundation.isSystemInDarkTheme()
-    val slots = remember(dark) { chatAccents(dark) }
-    // Self avatar uses the dynamic primary tone so it tracks Material You.
-    val selfAccent = SpeakerAccent(cs.primary, cs.onPrimary, isSelf = true)
-    val map = LinkedHashMap<String, SpeakerAccent>()
-    speakers.forEachIndexed { idx, s ->
-        val isSelf = s.id == Transcript.LEGACY_ME ||
-            (idx == 0 && speakers.size > 1)
-        map[s.id] = if (isSelf) selfAccent else slots[idx % slots.size]
-    }
-    return map
-}
-
-/**
- * 8 categorically distinct hues for non-self speakers. Indexes are stable
- * across recompositions because [speakerAccents] keys by speaker order, so
- * "Speaker B" keeps the same colour for the lifetime of one transcript.
- *
- * Avatar uses these as its background tile + initial colour. Light theme
- * tones are saturated mid-tones (avatars are small, need punch); dark theme
- * tones are deeper but stay legible against `surfaceContainerHigh` bubbles.
- */
-private fun chatAccents(dark: Boolean): List<SpeakerAccent> = if (dark) {
-    listOf(
-        SpeakerAccent(Color(0xFF4A78A8), Color(0xFFFFFFFF), false), // azure
-        SpeakerAccent(Color(0xFFB07A2E), Color(0xFFFFFFFF), false), // amber
-        SpeakerAccent(Color(0xFF3F8C72), Color(0xFFFFFFFF), false), // teal
-        SpeakerAccent(Color(0xFFB04D7A), Color(0xFFFFFFFF), false), // rose
-        SpeakerAccent(Color(0xFF6F68B0), Color(0xFFFFFFFF), false), // indigo
-        SpeakerAccent(Color(0xFF8C7E3A), Color(0xFFFFFFFF), false), // olive
-        SpeakerAccent(Color(0xFF9E5A4A), Color(0xFFFFFFFF), false), // terracotta
-        SpeakerAccent(Color(0xFF408384), Color(0xFFFFFFFF), false), // cyan
-    )
-} else {
-    listOf(
-        SpeakerAccent(Color(0xFF3F78AC), Color(0xFFFFFFFF), false),
-        SpeakerAccent(Color(0xFFB57E2E), Color(0xFFFFFFFF), false),
-        SpeakerAccent(Color(0xFF2D8A6E), Color(0xFFFFFFFF), false),
-        SpeakerAccent(Color(0xFFB44A75), Color(0xFFFFFFFF), false),
-        SpeakerAccent(Color(0xFF6862B5), Color(0xFFFFFFFF), false),
-        SpeakerAccent(Color(0xFF8A7A30), Color(0xFFFFFFFF), false),
-        SpeakerAccent(Color(0xFFA15240), Color(0xFFFFFFFF), false),
-        SpeakerAccent(Color(0xFF358082), Color(0xFFFFFFFF), false),
-    )
-}
-
-private fun legacyDisplayLabel(id: String): String = when (id) {
-    Transcript.LEGACY_ME -> "Я"
-    Transcript.LEGACY_THEM -> "Співрозмовник"
-    Transcript.LEGACY_UNKNOWN -> "—"
-    else -> id
-}
-
-@Composable
-private fun ChatSegment(
-    seg: Transcript.Segment,
-    accent: SpeakerAccent,
-    speakerLabel: String,
-    isFirstOfGroup: Boolean,
-    onSeek: (ms: Int) -> Unit,
-) {
-    val cs = MaterialTheme.colorScheme
-    // Bubble colours stay neutral — chat clouds are not the identity carrier.
-    // Self bubble gets a soft primary tint (Telegram-blue equivalent), all
-    // other speakers share the same surfaceContainerHigh so the eye keys on
-    // the avatar/header for "who's talking", not the cloud.
-    val bubbleBg = if (accent.isSelf) cs.primaryContainer else cs.surfaceContainerHigh
-    val bubbleFg = if (accent.isSelf) cs.onPrimaryContainer else cs.onSurface
-
-    val r = 18.dp
-    val tight = 6.dp
-    val shape = if (accent.isSelf) {
-        RoundedCornerShape(
-            topStart = r,
-            topEnd = r,
-            bottomEnd = if (isFirstOfGroup) tight else r,
-            bottomStart = r,
-        )
-    } else {
-        RoundedCornerShape(
-            topStart = r,
-            topEnd = r,
-            bottomEnd = r,
-            bottomStart = if (isFirstOfGroup) tight else r,
-        )
-    }
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = if (accent.isSelf) Arrangement.End else Arrangement.Start,
-        verticalAlignment = Alignment.Top,
-    ) {
-        if (!accent.isSelf) {
-            Box(
-                modifier = Modifier
-                    .size(32.dp)
-                    .padding(top = 2.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                if (isFirstOfGroup) {
-                    SpeakerAvatar(label = speakerLabel, accent = accent)
-                }
-            }
-            Spacer(Modifier.size(8.dp))
-        }
-        Column(
-            horizontalAlignment = if (accent.isSelf) Alignment.End else Alignment.Start,
-            modifier = Modifier.weight(1f, fill = false),
-        ) {
-            if (isFirstOfGroup && !accent.isSelf) {
-                // Header label uses the avatar accent — that's the only place
-                // (beyond the avatar itself) where the speaker's identity
-                // colour is visible. Keeps "who said this" cue alive when the
-                // avatar is hidden (later bubbles in a group).
-                Text(
-                    speakerLabel,
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = accent.container,
-                    modifier = Modifier.padding(start = 12.dp, bottom = 2.dp),
-                )
-            }
-            Surface(
-                onClick = { onSeek((seg.startSec * 1000).toInt()) },
-                color = bubbleBg,
-                contentColor = bubbleFg,
-                shape = shape,
-                modifier = Modifier.widthIn(max = 320.dp),
-            ) {
-                Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-                    if (seg.nonSpeech.isNotEmpty()) {
-                        Text(
-                            seg.nonSpeech.joinToString(", ") { "[${nonSpeechLabel(it)}]" },
-                            style = MaterialTheme.typography.labelSmall,
-                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
-                            color = bubbleFg.copy(alpha = 0.6f),
-                            modifier = Modifier.padding(bottom = 2.dp),
-                        )
-                    }
-                    Text(
-                        seg.text,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = bubbleFg,
-                    )
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .align(Alignment.End)
-                            .padding(top = 2.dp),
-                    ) {
-                        seg.tone?.let { tone ->
-                            Text(
-                                toneLabel(tone),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = bubbleFg.copy(alpha = 0.55f),
-                            )
-                            Spacer(Modifier.size(6.dp))
-                        }
-                        Text(
-                            formatTime((seg.startSec * 1000).toLong()),
-                            style = MaterialTheme.typography.labelSmall,
-                            fontFamily = FontFamily.Monospace,
-                            color = bubbleFg.copy(alpha = 0.65f),
-                        )
-                    }
-                }
-            }
-        }
-        if (accent.isSelf) {
-            Spacer(Modifier.size(4.dp))
-        }
-    }
-}
-
-@Composable
-private fun SpeakerAvatar(label: String, accent: SpeakerAccent) {
-    val initial = label.trim().firstOrNull { it.isLetter() }?.uppercase() ?: "?"
-    Box(
-        modifier = Modifier
-            .size(32.dp)
-            .clip(CircleShape)
-            .background(accent.container),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = initial,
-            style = MaterialTheme.typography.labelLarge,
-            fontWeight = FontWeight.Bold,
-            color = accent.onContainer,
-        )
-    }
-}
-
-private fun toneLabel(t: String): String = when (t.lowercase()) {
-    "friendly" -> "тепло"
-    "tense" -> "напружено"
-    "excited" -> "захоплено"
-    "sad" -> "сумно"
-    "angry" -> "зло"
-    "questioning" -> "питально"
-    "neutral" -> "нейтрально"
-    else -> t
-}
-
-private fun nonSpeechLabel(s: String): String = when (s.lowercase()) {
-    "laugh" -> "сміх"
-    "sigh" -> "зітхання"
-    "pause" -> "пауза"
-    "cough" -> "кашель"
-    "background_music" -> "музика"
-    "background_voice" -> "голос на фоні"
-    else -> s
-}

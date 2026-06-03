@@ -1,25 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Daemon health notifications -->
-    <string name="daemon_notinstalled_title">cally: Shizuku не встановлено</string>
-    <string name="daemon_notinstalled_body">Натисніть, щоб налаштувати</string>
-    <string name="daemon_notrunning_title">cally: Shizuku зупинений</string>
-    <string name="daemon_notrunning_body">Перезапустіть Shizuku, щоб записувати дзвінки</string>
-    <string name="daemon_nopermission_title">cally: потрібен дозвіл</string>
-    <string name="daemon_nopermission_body">Натисніть, щоб надати доступ Shizuku</string>
-    <string name="daemon_stale_title">cally: потрібен перезапуск</string>
-    <string name="daemon_stale_body">Натисніть, щоб оновити рекордер</string>
-    <string name="daemon_unhealthy_title">cally: рекордер не відповідає</string>
-    <string name="daemon_unhealthy_body">Натисніть, щоб перезапустити</string>
-    <string name="overlay_perm_missing_title">cally: потрібен дозвіл накладання</string>
-    <string name="overlay_perm_missing_body">Без нього неможливо записувати на Android 14+</string>
+    <string name="daemon_notinstalled_title">Ever Call Recorder: Shizuku not installed</string>
+    <string name="daemon_notinstalled_body">Tap to set up</string>
+    <string name="daemon_notrunning_title">Ever Call Recorder: Shizuku stopped</string>
+    <string name="daemon_notrunning_body">Reopen Shizuku to record calls</string>
+    <string name="daemon_nopermission_title">Ever Call Recorder: permission needed</string>
+    <string name="daemon_nopermission_body">Tap to grant Shizuku access</string>
+    <string name="daemon_stale_title">Ever Call Recorder: restart needed</string>
+    <string name="daemon_stale_body">Tap to refresh recorder</string>
+    <string name="daemon_unhealthy_title">Ever Call Recorder: recorder unresponsive</string>
+    <string name="daemon_unhealthy_body">Tap to restart</string>
+    <string name="overlay_perm_missing_title">Ever Call Recorder: overlay permission needed</string>
+    <string name="overlay_perm_missing_body">Cannot record without it on Android 14+</string>
 
     <!-- Onboarding tip -->
-    <string name="onboarding_shizuku_tip_title">Для кращої надійності</string>
-    <string name="onboarding_shizuku_tip_body">Розгляньте community-збірки Shizuku з автоперезапуском і збереженим ADB-pairing\'ом.</string>
-    <string name="onboarding_shizuku_tip_cta">Докладніше</string>
+    <string name="onboarding_shizuku_tip_title">For best reliability</string>
+    <string name="onboarding_shizuku_tip_body">Consider community Shizuku builds with auto-restart and persistent ADB pairing.</string>
+    <string name="onboarding_shizuku_tip_cta">Learn more</string>
 
     <!-- POST_NOTIFICATIONS rationale -->
-    <string name="onboarding_notif_perm_title">Дозволити сповіщення</string>
-    <string name="onboarding_notif_perm_body">Потрібно, щоб попередити, якщо Shizuku перестав працювати.</string>
+    <string name="onboarding_notif_perm_title">Allow notifications</string>
+    <string name="onboarding_notif_perm_body">Needed to alert you if Shizuku stops working.</string>
 </resources>

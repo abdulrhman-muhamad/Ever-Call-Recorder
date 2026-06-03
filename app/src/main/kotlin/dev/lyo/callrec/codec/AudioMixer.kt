@@ -10,21 +10,12 @@ import kotlin.math.min
 import kotlin.math.sqrt
 
 /**
- * Two-output mixer for the dual-stream call recordings:
+ * Mixer for dual-stream call recordings:
  *
  *  - [mixToStereoWav] — soft-pan (≈75/25) stereo for human listening (sharing,
  *    cached playback). Uplink leans left, downlink leans right, each still
  *    audible in the other ear so that pulling one earbud doesn't lose half the
  *    conversation.
- *
- *  - [mixNormalizedMonoForStt] — RMS-normalised mono sum for cloud audio LLM
- *    transcription. Gemini's official docs (ai.google.dev/gemini-api/docs/audio)
- *    state multi-channel audio is automatically combined into a single channel
- *    before processing, so any panning is wasted bytes. The real diarization
- *    bug is per-side level imbalance: uplink (mic-direct) is typically ~12 dB
- *    louder than downlink (post-codec / acoustic loop), so the naive sum lets
- *    the louder side dominate and the model only "hears" the user. We level
- *    each side to a common target RMS before summing.
  *
  * Decoding is delegated to [PcmDecoder] — single source of truth for PCM
  * extraction; this object is purely the mix + RIFF-write step.
@@ -60,46 +51,6 @@ object AudioMixer {
         }
         writeWav(out, SAMPLE_RATE, channels = 2, pcm = stereo)
         L.i(TAG, "soft-pan mix → ${out.path} (${stereo.size} bytes, $frames frames)")
-        return out
-    }
-
-    /**
-     * Decode both files, level-match each side to [TARGET_RMS], sum to mono
-     * int16, write a single-channel 16 kHz WAV. This is the file we feed to
-     * cloud STT so each speaker has comparable presence in the final mono
-     * spectrogram regardless of which side the recorder captured louder.
-     *
-     * The [MIN_RMS_FOR_GAIN] floor and [MAX_GAIN] ceiling prevent two
-     * pathologies: amplifying near-silent sides into pure noise, and blowing
-     * up a barely-audible side by 30+ dB when the other party never spoke
-     * loud enough to register.
-     */
-    fun mixNormalizedMonoForStt(uplink: File, downlink: File, out: File): File? {
-        val upPcm = PcmDecoder.readBytes(uplink) ?: return null
-        val dnPcm = PcmDecoder.readBytes(downlink) ?: return null
-        val upRms = rmsOf(upPcm)
-        val dnRms = rmsOf(dnPcm)
-        val upGain = gainFor(upRms)
-        val dnGain = gainFor(dnRms)
-
-        val frames = min(upPcm.size, dnPcm.size) / 2
-        val mono = ByteArray(frames * 2)
-        val upBuf = ByteBuffer.wrap(upPcm).order(ByteOrder.LITTLE_ENDIAN)
-        val dnBuf = ByteBuffer.wrap(dnPcm).order(ByteOrder.LITTLE_ENDIAN)
-        val outBuf = ByteBuffer.wrap(mono).order(ByteOrder.LITTLE_ENDIAN)
-        repeat(frames) {
-            val u = upBuf.short.toDouble() * upGain
-            val d = dnBuf.short.toDouble() * dnGain
-            val s = (u + d).toInt().coerceIn(-32768, 32767)
-            outBuf.putShort(s.toShort())
-        }
-        writeWav(out, SAMPLE_RATE, channels = 1, pcm = mono)
-        L.i(
-            TAG,
-            "stt-mix → ${out.path} frames=$frames " +
-                "upRms=${upRms.toInt()}×%.2f dnRms=${dnRms.toInt()}×%.2f"
-                    .format(upGain, dnGain),
-        )
         return out
     }
 

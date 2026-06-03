@@ -2,9 +2,13 @@
 package com.coolappstore.evercallrecorder.by.svhp.ui.nav
 
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -98,19 +102,23 @@ fun CallrecApp(
     NavHost(
         navController = nav,
         startDestination = start,
-        // Material 3 Expressive favours subtle vertical translation over the
-        // platform default horizontal slide — feels lighter and works well
-        // edge-to-edge.
+        // Slow, smooth forward push: slide in from right with long fade
         enterTransition = {
-            fadeIn(animationSpec = tween(220)) +
-                slideInVertically(animationSpec = tween(280)) { it / 16 }
+            fadeIn(animationSpec = tween(420, easing = androidx.compose.animation.core.EaseOutCubic)) +
+                slideInHorizontally(animationSpec = tween(480, easing = androidx.compose.animation.core.EaseOutCubic)) { (it * 0.18f).toInt() }
         },
         exitTransition = {
-            fadeOut(animationSpec = tween(180)) +
-                slideOutVertically(animationSpec = tween(220)) { -it / 32 }
+            fadeOut(animationSpec = tween(300, easing = androidx.compose.animation.core.EaseInCubic)) +
+                slideOutHorizontally(animationSpec = tween(360, easing = androidx.compose.animation.core.EaseInCubic)) { -(it * 0.10f).toInt() }
         },
-        popEnterTransition = { fadeIn(animationSpec = tween(220)) },
-        popExitTransition = { fadeOut(animationSpec = tween(160)) },
+        popEnterTransition = {
+            fadeIn(animationSpec = tween(420, easing = androidx.compose.animation.core.EaseOutCubic)) +
+                slideInHorizontally(animationSpec = tween(480, easing = androidx.compose.animation.core.EaseOutCubic)) { -(it * 0.10f).toInt() }
+        },
+        popExitTransition = {
+            fadeOut(animationSpec = tween(320, easing = androidx.compose.animation.core.EaseInCubic)) +
+                slideOutHorizontally(animationSpec = tween(400, easing = androidx.compose.animation.core.EaseInCubic)) { (it * 0.18f).toInt() }
+        },
     ) {
         composable(Routes.Onboarding) {
             OnboardingScreen(

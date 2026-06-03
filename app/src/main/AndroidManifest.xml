@@ -3,15 +3,11 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <!--
-      INTERNET is required for cloud transcription only — audio is sent to a
-      user-configured OpenAI-compatible endpoint (default: OpenRouter with
-      Gemini Flash). Transcription is OPT-IN: it runs only when the user
-      taps "Розпізнати мову" on a record AND has entered an API key in
-      Settings. Recording itself never touches the network. The endpoint URL
-      is fully user-configurable so privacy-conscious users can point at a
-      self-hosted LM Studio / Ollama server.
+      INTERNET is required for future features only.
+      Recording itself never touches the network.
     -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- Telephony state for auto-detect of OFFHOOK/IDLE transitions. -->
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
@@ -124,7 +120,7 @@
             android:exported="false">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="Call recording. Audio is captured in a separate Shizuku UserService process (UID 2000); this FGS only coordinates lifecycle, notification, and storage. Recordings stay on-device unless the user enables cloud transcription." />
+                android:value="Call recording. Audio is captured in a separate Shizuku UserService process (UID 2000); this FGS only coordinates lifecycle, notification, and storage. Recordings stay on-device." />
         </service>
 
         <!--
