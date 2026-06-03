@@ -26,6 +26,7 @@ GitHub: [Download](https://github.com/hari161008/Ever-Call-Recorder/releases) �
 <a href="https://t.me/EverlastingAndroidTweak">Join Now</a>
 
 <br>
+
 # 📱 Screenshots:
 
 <p align="center">
@@ -47,6 +48,8 @@ GitHub: [Download](https://github.com/hari161008/Ever-Call-Recorder/releases) �
 </p>
 
 <br>
+
+# Features of Ever Call Recorder .✦ ݁˖
 
 # The App Which I Used As The Base
 ┈➤ [Cally](https://github.com/LyoSU/cally)
