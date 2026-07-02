@@ -1176,8 +1176,8 @@ private fun chatAccents(dark: Boolean): List<SpeakerAccent> = if (dark) {
 }
 
 private fun legacyDisplayLabel(id: String): String = when (id) {
-    Transcript.LEGACY_ME -> "Я"
-    Transcript.LEGACY_THEM -> "Співрозмовник"
+    Transcript.LEGACY_ME -> "Me"
+    Transcript.LEGACY_THEM -> "Other party"
     Transcript.LEGACY_UNKNOWN -> "—"
     else -> id
 }
@@ -1322,22 +1322,22 @@ private fun SpeakerAvatar(label: String, accent: SpeakerAccent) {
 }
 
 private fun toneLabel(t: String): String = when (t.lowercase()) {
-    "friendly" -> "тепло"
-    "tense" -> "напружено"
-    "excited" -> "захоплено"
-    "sad" -> "сумно"
-    "angry" -> "зло"
-    "questioning" -> "питально"
-    "neutral" -> "нейтрально"
+    "friendly" -> "friendly"
+    "tense" -> "tense"
+    "excited" -> "excited"
+    "sad" -> "sad"
+    "angry" -> "angry"
+    "questioning" -> "questioning"
+    "neutral" -> "neutral"
     else -> t
 }
 
 private fun nonSpeechLabel(s: String): String = when (s.lowercase()) {
-    "laugh" -> "сміх"
-    "sigh" -> "зітхання"
-    "pause" -> "пауза"
-    "cough" -> "кашель"
-    "background_music" -> "музика"
-    "background_voice" -> "голос на фоні"
+    "laugh" -> "laugh"
+    "sigh" -> "sigh"
+    "pause" -> "pause"
+    "cough" -> "cough"
+    "background_music" -> "music"
+    "background_voice" -> "background voice"
     else -> s
 }

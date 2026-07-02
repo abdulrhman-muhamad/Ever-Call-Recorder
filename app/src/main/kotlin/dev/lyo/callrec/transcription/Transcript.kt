@@ -75,7 +75,7 @@ object TranscriptCodec {
                     val o = arr.getJSONObject(i)
                     Transcript.SpeakerInfo(
                         id = o.optString("id").ifBlank { "S${i + 1}" },
-                        label = o.optString("label").ifBlank { "Спікер ${i + 1}" },
+                        label = o.optString("label").ifBlank { "Speaker ${i + 1}" },
                     )
                 }
             }
@@ -144,8 +144,8 @@ object TranscriptCodec {
     }
 
     private fun legacyLabel(id: String): String = when (id) {
-        Transcript.LEGACY_ME -> "Я"
-        Transcript.LEGACY_THEM -> "Співрозмовник"
+        Transcript.LEGACY_ME -> "Me"
+        Transcript.LEGACY_THEM -> "Other party"
         else -> "?"
     }
 

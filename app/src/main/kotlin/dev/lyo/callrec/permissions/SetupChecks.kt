@@ -31,9 +31,15 @@ data class SetupStatus(
     val overlayGranted: Boolean,
     val batteryExempt: Boolean,
     val accessibilityEnabled: Boolean,
+    /**
+     * Xiaomi/MIUI proprietary permissions confirmed. Always `true` on non-MIUI
+     * devices (the onboarding step is hidden there). On MIUI it tracks the
+     * persisted acknowledgment — see [com.coolappstore.evercallrecorder.by.svhp.permissions.MiuiPermissions].
+     */
+    val miuiReady: Boolean,
 ) {
     val allReady: Boolean get() =
-        shizukuReady && runtimePermsGranted && overlayGranted && batteryExempt
+        shizukuReady && runtimePermsGranted && overlayGranted && batteryExempt && miuiReady
 
     companion object {
         fun probe(ctx: Context, container: AppContainer): SetupStatus {
@@ -44,6 +50,7 @@ data class SetupStatus(
                 overlayGranted = Settings.canDrawOverlays(ctx),
                 batteryExempt = BatteryOptimizations.isIgnoring(ctx),
                 accessibilityEnabled = AccessibilityHelper.isEnabled(ctx),
+                miuiReady = !MiuiPermissions.isMiui() || container.miuiAcknowledged.value,
             )
         }
     }

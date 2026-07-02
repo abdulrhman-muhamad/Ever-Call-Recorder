@@ -15,14 +15,16 @@ plugins {
 //   - VERSION_CODE_USERSERVICE → bumped whenever the AIDL contract or pump
 //                          semantics change; `daemon=true` daemons surviving
 //                          an upgrade compare versions and respawn if stale.
-val appPackageId = "com.coolappstore.evercallrecorder.by.svhp"
+val appPackageId = "com.whtsagent.recorder"
 // Bump on every change to RecorderService / AudioRecorderJob / verifyCaller —
 // the Shizuku daemon (daemon=true) checks this and respawns if its in-memory
 // version differs from the freshly-installed APK's version.
 //
 // 12: getBypassHealth() added; probeSource() and grantPermission() removed.
 //     AIDL contract changed — in-flight v11 daemon must respawn.
-val userServiceVersion = 12
+// 13: setAppOpAllow()/getAppOpMode() added for MIUI proprietary app-ops.
+//     AIDL contract changed — in-flight v12 daemon must respawn.
+val userServiceVersion = 13
 
 // Auto-derive the release certificate's SHA-256 from the keystore so the
 // verifyCaller() pin always matches the APK we just signed — without forcing

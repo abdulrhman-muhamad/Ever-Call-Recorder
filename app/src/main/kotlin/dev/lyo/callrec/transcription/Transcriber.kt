@@ -46,7 +46,7 @@ private class CloudTranscriber(private val settings: AppSettings) : Transcriber 
         val key = settings.sttApiKey.first()
         val model = settings.sttModel.first()
         require(key.isNotBlank()) {
-            "API ключ не вказаний. Налаштування → Транскрипція → API ключ."
+            "API key not set. Settings → Transcription → API key."
         }
 
         // Send the actual container name. Gemini's OpenAI-compat layer
@@ -85,7 +85,7 @@ private class CloudTranscriber(private val settings: AppSettings) : Transcriber 
             L.d("STT", "code=$code body.len=${body.length}")
             if (code !in 200..299) {
                 L.w("STT", "HTTP $code (body length=${body.length})")
-                error("HTTP $code від ${url.host}")
+                error("HTTP $code from ${url.host}")
             }
             parseTranscript(body)
         } finally {
@@ -191,74 +191,77 @@ private class CloudTranscriber(private val settings: AppSettings) : Transcriber 
         // memos with several people present the model can lift names from
         // the conversation itself ("Привіт Олю!" → speaker B label "Оля").
         private val PROMPT = """
-            Транскрибуй цей запис аудіо. Розпізнавай мову автоматично
-            (українська / російська / англійська / суміш — зберігай як є).
+            Transcribe this audio recording. Auto-detect the language and keep
+            it as-is (English / Arabic / mixed — preserve faithfully).
 
-            Аудіо — моно з ВИРІВНЯНИМИ рівнями обох сторін. Канальних підказок
-            у файлі немає, розрізняй спікерів ВИКЛЮЧНО за акустичними ознаками
-            голосу (висота / тембр / темп / манера).
+            The audio is mono with BALANCED levels for both sides. There are
+            no channel hints in the file — distinguish speakers EXCLUSIVELY
+            by acoustic voice characteristics (pitch / timbre / cadence / style).
 
-            Розпізнавай ОКРЕМО кожного спікера:
-            • Якщо це телефонний дзвінок (характерне phone-line звучання,
-              діалог двох людей): рівно ДВА спікери. id "ME" — той хто
-              говорить ближче і чистіше (мікрофонний бік), label "Я";
-              id "THEM" — інший голос, label "Співрозмовник" (або імʼя якщо
-              звучить у розмові).
-            • Якщо це звичайний аудіозапис з кількома голосами: створи
-              окремий запис у speakers на КОЖЕН різний голос. id — короткі
-              ярлики "A", "B", "C"… label — імʼя якщо чути ("Оля", "Микола"),
-              інакше "Спікер 1", "Спікер 2"…
-            • Тон, pitch, темп і манера мовлення — головні ознаки розрізнення.
-              Не плутай зміну гучності або емоції одного й того ж спікера з
-              різними людьми. Жінка vs чоловік — майже завжди різні id.
-            • НЕ зливай весь діалог на одного спікера лише тому що один голос
-              трохи виразніший за інший. Якщо ти чуєш дві відмінні голосові
-              характеристики — це двоє людей.
+            Identify EACH speaker separately:
+            • If this is a phone call (characteristic phone-line sound,
+              two-person dialogue): exactly TWO speakers. id "ME" — the one
+              speaking closer and clearer (microphone side), label "Me";
+              id "THEM" — the other voice, label "Other party" (or a name
+              if it's used in the conversation).
+            • If this is a general recording with multiple voices: create a
+              separate entry in speakers for EACH distinct voice. id — short
+              labels "A", "B", "C"… label — a name if audible ("Alice", "Bob"),
+              otherwise "Speaker 1", "Speaker 2"…
+            • Tone, pitch, tempo, and speaking style are the primary cues for
+              distinguishing speakers. Do not confuse volume or emotion changes
+              of one speaker with different people. Female vs male — almost
+              always different ids.
+            • Do NOT merge the whole dialogue onto one speaker just because
+              one voice is slightly clearer. If you hear two distinct vocal
+              signatures — those are two people.
 
-            Поле "title" — короткий опис змісту запису (до 60 символів),
-            українською, без лапок і емодзі. Як назва нотатки. Приклади:
-            "Розмова з Олею про вечерю", "Список покупок і плани", "Лекція з
-            алгоритмів, кінець семестру". Якщо запис без мовлення — "Без мовлення".
+            The "title" field is a short description of the recording's content
+            (up to 60 chars), in English, without quotes or emojis. Like a note
+            title. Examples: "Lunch plans with Alice", "Shopping list and
+            errands", "Algorithms lecture, end of semester". If the recording
+            has no speech — "No speech".
 
-            Поверни ВИКЛЮЧНО JSON-обʼєкт у такій формі (без markdown-fences):
+            Return ONLY a JSON object in this exact shape (no markdown fences):
             {
-              "title": "Короткий опис",
-              "language": "uk",
+              "title": "Short description",
+              "language": "en",
               "duration_sec": 142.5,
               "speakers": [
-                {"id": "A", "label": "Я"},
-                {"id": "B", "label": "Оля"}
+                {"id": "A", "label": "Me"},
+                {"id": "B", "label": "Alice"}
               ],
               "segments": [
                 {
                   "start": 0.0,
                   "end": 3.2,
                   "speaker_id": "A",
-                  "text": "Привіт, як справи?",
+                  "text": "Hi, how are you?",
                   "tone": "friendly",
                   "non_speech": ["laugh"]
                 }
               ]
             }
 
-            Правила:
-            • title — обовʼязково, не порожній.
-            • speakers і segments узгоджені: кожен speaker_id має існувати у speakers.
-            • Розбивай на репліки. Зливай короткі підряд-репліки одного спікера
-              якщо вони на одну тему.
-            • non_speech: лише помітні звуки (laugh, sigh, cough, pause,
+            Rules:
+            • title — required, must not be empty.
+            • speakers and segments must be consistent: every speaker_id must
+              exist in speakers.
+            • Split into utterances. Merge short consecutive utterances of the
+              same speaker if they're on the same topic.
+            • non_speech: only notable sounds (laugh, sigh, cough, pause,
               background_music, background_voice).
-            • tone: friendly|tense|neutral|excited|sad|angry|questioning або null.
-            • Не вигадуй текст — якщо нерозбірливо, постав "[нерозбірливо]".
-            • Жодних коментарів, заголовків поза JSON — тільки сам обʼєкт.
+            • tone: friendly|tense|neutral|excited|sad|angry|questioning or null.
+            • Do not invent text — if inaudible, write "[inaudible]".
+            • No comments or headings outside the JSON — only the object itself.
         """.trimIndent()
     }
 
     private fun parseTranscript(body: String): String {
         val root = JSONObject(body)
-        val choices = root.optJSONArray("choices") ?: error("Відповідь без choices")
-        if (choices.length() == 0) error("Порожній choices у відповіді")
-        val msg = choices.getJSONObject(0).optJSONObject("message") ?: error("Без message в choices[0]")
+        val choices = root.optJSONArray("choices") ?: error("Response missing choices")
+        if (choices.length() == 0) error("Empty choices in response")
+        val msg = choices.getJSONObject(0).optJSONObject("message") ?: error("Missing message in choices[0]")
         // Some providers return content as string, others as list of parts.
         return when (val c = msg.opt("content")) {
             is String -> c.trim()
@@ -270,7 +273,7 @@ private class CloudTranscriber(private val settings: AppSettings) : Transcriber 
                 }
                 sb.toString().trim()
             }
-            else -> error("Невідомий формат content")
+            else -> error("Unknown content format")
         }
     }
 }

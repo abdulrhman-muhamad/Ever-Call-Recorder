@@ -36,6 +36,7 @@ import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Layers
 import androidx.compose.material.icons.outlined.LockOpen
+import androidx.compose.material.icons.outlined.RadioButtonUnchecked
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Verified
 import androidx.compose.material3.Button
@@ -74,9 +75,12 @@ import com.coolappstore.evercallrecorder.by.svhp.R
 import com.coolappstore.evercallrecorder.by.svhp.di.AppContainer
 import com.coolappstore.evercallrecorder.by.svhp.permissions.AppPermissions
 import com.coolappstore.evercallrecorder.by.svhp.permissions.BatteryOptimizations
+import com.coolappstore.evercallrecorder.by.svhp.permissions.MiuiPermissions
 import com.coolappstore.evercallrecorder.by.svhp.permissions.rememberPermissionsState
 import com.coolappstore.evercallrecorder.by.svhp.recorder.DaemonHealth
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private const val SHIZUKU_FORK_URL = "https://github.com/thedjchi/Shizuku"
 
@@ -114,12 +118,26 @@ fun OnboardingScreen(
     // RESUMED → that's our refresh trigger.
     var overlayGranted by remember { mutableStateOf(Settings.canDrawOverlays(ctx)) }
     var batteryExempt by remember { mutableStateOf(BatteryOptimizations.isIgnoring(ctx)) }
+    // Per-op granted state for the background/pop-up checklist, read back live
+    // via Shizuku (MIUI ops echo as `MIUIOP(10021): allow|ignore`). Readiness is
+    // driven strictly by this — no sticky manual-confirm fallback.
+    var popupOpStates by remember { mutableStateOf<Map<String, Boolean>>(emptyMap()) }
+    val popupReady = MiuiPermissions.checklistOps.all { popupOpStates[it] == true }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     LaunchedEffect(lifecycle) {
         lifecycle.currentStateFlow.collect {
             if (it.isAtLeast(Lifecycle.State.RESUMED)) {
                 overlayGranted = Settings.canDrawOverlays(ctx)
                 batteryExempt = BatteryOptimizations.isIgnoring(ctx)
+                container.shizuku.service.value?.let { svc ->
+                    val states = withContext(Dispatchers.IO) {
+                        MiuiPermissions.readOps(svc, ctx.packageName)
+                    }
+                    popupOpStates = states
+                    container.settings.setMiuiPermsAcknowledged(
+                        states.isNotEmpty() && states.values.all { v -> v }
+                    )
+                }
             }
         }
     }
@@ -128,8 +146,10 @@ fun OnboardingScreen(
         ActivityResultContracts.RequestPermission()
     ) { /* state recomputed via observer; nothing to do here */ }
 
+    var miuiGrantRunning by remember { mutableStateOf(false) }
+
     val readyToContinue = shizukuInstalled && shizukuActivated && shizukuPermitted &&
-        allRuntimeGranted && overlayGranted && batteryExempt
+        allRuntimeGranted && overlayGranted && batteryExempt && popupReady
 
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(
@@ -211,11 +231,11 @@ fun OnboardingScreen(
             StepCard(
                 index = stepIdx++,
                 icon = Icons.Outlined.LockOpen,
-                title = "Дозволи системи",
-                desc = "Мікрофон, сповіщення, статус телефону, журнал дзвінків, контакти — щоб запис стартував і поряд із записом було видно, з ким говорили.",
+                title = "System permissions",
+                desc = "Microphone, notifications, phone state, call log, contacts — so recording can start and you can see who you talked to next to each recording.",
                 done = allRuntimeGranted,
                 action = if (!allRuntimeGranted) requestPerms else null,
-                actionLabel = "Дозволити",
+                actionLabel = "Allow",
             )
             StepCard(
                 index = stepIdx++,
@@ -246,6 +266,33 @@ fun OnboardingScreen(
                 actionLabel = stringResource(R.string.onboarding_step_battery_action),
             )
 
+            PopupPermissionsCard(
+                index = stepIdx++,
+                opStates = popupOpStates,
+                autoGrantEnabled = shizukuPermitted && !miuiGrantRunning,
+                autoGrantRunning = miuiGrantRunning,
+                onAutoGrant = {
+                    val svc = container.shizuku.service.value ?: return@PopupPermissionsCard
+                    miuiGrantRunning = true
+                    scope.launch {
+                        withContext(Dispatchers.IO) {
+                            MiuiPermissions.autoGrant(svc, ctx.packageName)
+                        }
+                        // Re-read live op state so each row reflects reality.
+                        val states = withContext(Dispatchers.IO) {
+                            MiuiPermissions.readOps(svc, ctx.packageName)
+                        }
+                        popupOpStates = states
+                        container.settings.setMiuiPermsAcknowledged(
+                            states.isNotEmpty() && states.values.all { v -> v }
+                        )
+                        miuiGrantRunning = false
+                    }
+                },
+                onOpenPermissions = { MiuiPermissions.openPermissionEditor(ctx) },
+                onOpenAutostart = { MiuiPermissions.openAutoStart(ctx) },
+            )
+
             ElevatedCard(modifier = Modifier.padding(0.dp).fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
@@ -273,12 +320,23 @@ fun OnboardingScreen(
                     container.shizuku.refresh()
                     overlayGranted = Settings.canDrawOverlays(ctx)
                     batteryExempt = BatteryOptimizations.isIgnoring(ctx)
+                    scope.launch {
+                        container.shizuku.service.value?.let { svc ->
+                            val states = withContext(Dispatchers.IO) {
+                                MiuiPermissions.readOps(svc, ctx.packageName)
+                            }
+                            popupOpStates = states
+                            container.settings.setMiuiPermsAcknowledged(
+                                states.isNotEmpty() && states.values.all { v -> v }
+                            )
+                        }
+                    }
                 },
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Icon(Icons.Outlined.Refresh, contentDescription = null)
                 Spacer(Modifier.size(8.dp))
-                Text("Перевірити статус")
+                Text("Check status")
             }
 
             AnimatedVisibility(
@@ -288,7 +346,7 @@ fun OnboardingScreen(
             ) {
                 Text(
                     text = stringResource(R.string.err_shizuku_denied) +
-                        " — відкрий Shizuku та надай дозвіл вручну.",
+                        " — open Shizuku and grant permission manually.",
                     color = MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.bodyMedium,
                 )
@@ -366,6 +424,113 @@ private fun StepCard(
                 Row(modifier = Modifier.fillMaxWidth()) {
                     Spacer(Modifier.weight(1f))
                     OutlinedButton(onClick = action) { Text(actionLabel) }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Background / pop-up permissions card, shown on all devices. Each op is
+ * verified live via Shizuku (`appops get` → `MIUIOP(n): allow|ignore`) and
+ * rendered as its own checked/unchecked row. The step is "done" only when ALL
+ * ops read back as allowed — there is no manual-confirm fallback.
+ *
+ *   - Auto-grant — flips the ops via the Shizuku shell service.
+ *   - Deep-links — open the system permission editor / autostart manager so the
+ *     user can flip anything the op-codes missed on their ROM.
+ */
+@Composable
+private fun PopupPermissionsCard(
+    index: Int,
+    opStates: Map<String, Boolean>,
+    autoGrantEnabled: Boolean,
+    autoGrantRunning: Boolean,
+    onAutoGrant: () -> Unit,
+    onOpenPermissions: () -> Unit,
+    onOpenAutostart: () -> Unit,
+) {
+    val allGranted = MiuiPermissions.checklistOps.all { opStates[it] == true }
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = if (allGranted) MaterialTheme.colorScheme.secondaryContainer
+            else MaterialTheme.colorScheme.surfaceContainerHigh,
+        ),
+        shape = RoundedCornerShape(28.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(modifier = Modifier.padding(20.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(modifier = Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+                    Icon(
+                        if (allGranted) Icons.Outlined.CheckCircle else Icons.Outlined.Layers,
+                        contentDescription = null,
+                        tint = if (allGranted) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(if (allGranted) 36.dp else 28.dp),
+                    )
+                }
+                Spacer(Modifier.width(16.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "$index. Background & pop-up permissions",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        "Required so call recording can start in the background. Each is verified live:",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            // Per-permission live status rows.
+            MiuiPermissions.checklistOps.forEach { op ->
+                val granted = opStates[op] == true
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        if (granted) Icons.Outlined.CheckCircle else Icons.Outlined.RadioButtonUnchecked,
+                        contentDescription = null,
+                        tint = if (granted) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        MiuiPermissions.opLabels[op] ?: op,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            FilledTonalButton(
+                onClick = onAutoGrant,
+                enabled = autoGrantEnabled,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(if (autoGrantRunning) "Granting…" else "Auto-grant via Shizuku")
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedButton(onClick = onOpenPermissions, modifier = Modifier.weight(1f)) {
+                    Text("Permissions")
+                }
+                OutlinedButton(onClick = onOpenAutostart, modifier = Modifier.weight(1f)) {
+                    Text("Autostart")
                 }
             }
         }

@@ -21,7 +21,7 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.coolappstore.evercallrecorder.by.svhp"
+        applicationId = "com.whtsagent.recorder"
         minSdk = 31
         targetSdk = 36
         versionCode = 6

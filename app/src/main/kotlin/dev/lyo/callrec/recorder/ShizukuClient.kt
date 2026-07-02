@@ -154,12 +154,14 @@ class ShizukuClient(private val ctx: Context) {
      * Android 11+ would return NameNotFoundException even on installed
      * devices.
      */
-    private fun isShizukuInstalled(): Boolean = runCatching {
-        ctx.packageManager.getPackageInfo("moe.shizuku.privileged.api", 0)
-    }.isSuccess
+    private fun isShizukuInstalled(): Boolean =
+        listOf("moe.shizuku.privileged.api", "com.nll.shizuku.privileged.api").any { pkg ->
+            runCatching { ctx.packageManager.getPackageInfo(pkg, 0) }.isSuccess
+        }
 
     companion object {
         private const val REQUEST_CODE = 0xCA11
-        private const val USER_SERVICE_VERSION = 12
+        // Keep in lock-step with userservice/build.gradle.kts `userServiceVersion`.
+        private const val USER_SERVICE_VERSION = 13
     }
 }

@@ -396,7 +396,7 @@ private fun SampleRateRow(
                     onCheckedChange = { onSelect(rate) },
                     shapes = ToggleButtonDefaults.shapes(),
                     modifier = Modifier.weight(1f),
-                ) { Text("${rate / 1000} кГц") }
+                ) { Text("${rate / 1000} kHz") }
             }
         }
     }

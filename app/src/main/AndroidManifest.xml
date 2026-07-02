@@ -56,6 +56,7 @@
 
     <queries>
         <package android:name="moe.shizuku.privileged.api" />
+        <package android:name="com.nll.shizuku.privileged.api" />
     </queries>
 
     <application

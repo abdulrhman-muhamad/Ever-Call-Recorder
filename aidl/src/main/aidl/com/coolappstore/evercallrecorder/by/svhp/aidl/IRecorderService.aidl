@@ -93,4 +93,32 @@ interface IRecorderService {
     // = 20 reserved (was probeSource — removed in v0.3, never used by app)
 
     // = 30 reserved (was grantPermission — removed in v0.3, never used by app)
+
+    /**
+     * Set an AppOps mode to "allow" for the given package, executed from the
+     * privileged shell UID. This is the only way to flip MIUI's proprietary
+     * permissions (Autostart, Show-on-lock-screen, background-activity-start,
+     * install-shortcut) from inside the app: they have no public Android API,
+     * and `adb shell appops set …` is exactly what we replicate here via the
+     * shell-UID UserService. Works with MIUI optimization left ON.
+     *
+     * @param packageName must be our own application id (the service rejects
+     *                    any other target — see verifyCaller + the op guard).
+     * @param op          AppOps op: a named op ("SYSTEM_ALERT_WINDOW") or a
+     *                    numeric MIUI op code as a string ("10008"). Only
+     *                    [A-Za-z0-9_] is accepted.
+     * @return 1 if the `appops set` invocation exited 0, else 0.
+     */
+    int setAppOpAllow(String packageName, String op) = 31;
+
+    /**
+     * Read the current AppOps mode for packageName+op via `appops get`.
+     *
+     * @return raw stdout (e.g. "SYSTEM_ALERT_WINDOW: allow"), or null when the
+     *         command fails or the op is unknown on this ROM. Numeric MIUI ops
+     *         frequently return null even when set, so callers must treat a
+     *         null/empty result as "unverifiable", not "denied".
+     */
+    @nullable
+    String getAppOpMode(String packageName, String op) = 32;
 }

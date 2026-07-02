@@ -41,6 +41,14 @@ class AppSettings(private val store: DataStore<Preferences>) {
     val recordIncludingRingback: Flow<Boolean> = store.data.map { it[KEY_RING_INCLUDED] ?: false }
     suspend fun setRecordIncludingRingback(v: Boolean) = store.edit { it[KEY_RING_INCLUDED] = v }
 
+    // Xiaomi/MIUI-only acknowledgment. MIUI's proprietary permissions (autostart,
+    // show-on-lock-screen, background pop-up, shortcut) can't be read back
+    // reliably, so the onboarding gate trusts this flag — set when the user
+    // confirms they've enabled them (after our best-effort Shizuku auto-grant
+    // and/or the deep-link to MIUI's own settings).
+    val miuiPermsAcknowledged: Flow<Boolean> = store.data.map { it[KEY_MIUI_ACK] ?: false }
+    suspend fun setMiuiPermsAcknowledged(v: Boolean) = store.edit { it[KEY_MIUI_ACK] = v }
+
     val format: Flow<RecordingFormat> = store.data.map {
         runCatching { RecordingFormat.valueOf(it[KEY_FORMAT] ?: RecordingFormat.AAC.name) }
             .getOrDefault(RecordingFormat.AAC)
@@ -111,6 +119,7 @@ class AppSettings(private val store: DataStore<Preferences>) {
         val ONBOARDING_DONE = booleanPreferencesKey("onboarding_done")
         val DISCLAIMER_ACCEPTED = booleanPreferencesKey("disclaimer_accepted_v1")
         val RING_INCLUDED = booleanPreferencesKey("ring_included")
+        val MIUI_ACK = booleanPreferencesKey("miui_perms_acknowledged_v1")
         val FORMAT = stringPreferencesKey("recording_format")
         val STT_BASE_URL = stringPreferencesKey("stt_base_url")
         val STT_API_KEY = stringPreferencesKey("stt_api_key")
@@ -124,6 +133,7 @@ class AppSettings(private val store: DataStore<Preferences>) {
     private val KEY_ONBOARDING_DONE get() = Keys.ONBOARDING_DONE
     private val KEY_DISCLAIMER_ACCEPTED get() = Keys.DISCLAIMER_ACCEPTED
     private val KEY_RING_INCLUDED get() = Keys.RING_INCLUDED
+    private val KEY_MIUI_ACK get() = Keys.MIUI_ACK
     private val KEY_FORMAT get() = Keys.FORMAT
     private val KEY_STT_BASE_URL get() = Keys.STT_BASE_URL
     private val KEY_STT_API_KEY get() = Keys.STT_API_KEY

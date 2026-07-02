@@ -171,6 +171,55 @@ class RecorderService : IRecorderService.Stub() {
 
     override fun getLastError(): String? = lastError.get()
 
+    override fun setAppOpAllow(packageName: String, op: String): Int {
+        verifyCaller()
+        if (!isOurPackage(packageName) || !isSafeOp(op)) {
+            Log.w(TAG, "setAppOpAllow rejected pkg=$packageName op=$op")
+            return 0
+        }
+        val r = runShell(arrayOf("appops", "set", packageName, op, "allow"))
+        Log.i(TAG, "setAppOpAllow $op -> exit=${r.exitCode} err=${r.stderr.trim()}")
+        return if (r.exitCode == 0) 1 else 0
+    }
+
+    override fun getAppOpMode(packageName: String, op: String): String? {
+        verifyCaller()
+        if (!isOurPackage(packageName) || !isSafeOp(op)) return null
+        val r = runShell(arrayOf("appops", "get", packageName, op))
+        return if (r.exitCode == 0) r.stdout.trim().ifEmpty { null } else null
+    }
+
+    // Only ever operate on our own package — never let the bound app turn this
+    // into a generic "grant any op to any package" primitive.
+    private fun isOurPackage(pkg: String): Boolean =
+        pkg == BuildConfig.APP_PACKAGE_ID || pkg.startsWith("${BuildConfig.APP_PACKAGE_ID}.")
+
+    // Named ops or numeric MIUI codes only; nothing that could smuggle args.
+    private fun isSafeOp(op: String): Boolean =
+        op.isNotEmpty() && op.length <= 48 && op.all { it.isLetterOrDigit() || it == '_' }
+
+    private data class ShellResult(val exitCode: Int, val stdout: String, val stderr: String)
+
+    // We're already running as shell (UID 2000) inside the Shizuku-spawned
+    // app_process, so /system/bin/appops is directly invokable. exec() with an
+    // arg array (no shell) means the validated op/pkg can't be used for
+    // injection. appops output is a few bytes, so reading streams before
+    // waitFor cannot deadlock.
+    private fun runShell(cmd: Array<String>, timeoutMs: Long = 8_000): ShellResult = try {
+        val p = Runtime.getRuntime().exec(cmd)
+        val out = p.inputStream.bufferedReader().use { it.readText() }
+        val err = p.errorStream.bufferedReader().use { it.readText() }
+        if (!p.waitFor(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS)) {
+            p.destroyForcibly()
+            ShellResult(-1, out, "timeout")
+        } else {
+            ShellResult(p.exitValue(), out, err)
+        }
+    } catch (t: Throwable) {
+        Log.e(TAG, "runShell failed: ${cmd.joinToString(" ")}", t)
+        ShellResult(-1, "", t.message ?: "exec failed")
+    }
+
     /**
      * Defence in depth: with `daemon=true` the Binder lives across our app's
      * lifetime. Any other Shizuku-permitted package on the device could in

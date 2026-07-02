@@ -909,14 +909,14 @@ private fun RecordingRow(
 private fun subtitle(rec: CallRecord): String {
     val durMs = (rec.endedAt ?: rec.startedAt) - rec.startedAt
     val secs = (durMs / 1000).coerceAtLeast(0)
-    val dur = if (secs >= 60) "%d:%02d".format(secs / 60, secs % 60) else "${secs}с"
+    val dur = if (secs >= 60) "%d:%02d".format(secs / 60, secs % 60) else "${secs}s"
     val parts = mutableListOf(dur)
     rec.contactNumber?.takeIf { it.isNotBlank() && rec.contactName != null }?.let { parts.add(it) }
     return parts.joinToString("  •  ")
 }
 
 private val VOICE_MEMO_FMT =
-    DateTimeFormatter.ofPattern("d MMM, HH:mm", Locale.forLanguageTag("uk"))
+    DateTimeFormatter.ofPattern("d MMM, HH:mm", Locale.ENGLISH)
         .withZone(ZoneId.systemDefault())
 
 private fun isVoiceMemo(rec: CallRecord): Boolean = rec.mode == MODE_VOICE_MEMO

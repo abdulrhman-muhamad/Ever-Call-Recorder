@@ -64,6 +64,22 @@ class AppContainer(private val ctx: Context) {
         )
     }
 
+    /**
+     * Synchronous mirror of the MIUI-acknowledgment flag so [SetupStatus.probe]
+     * — which runs on the main thread in MainActivity.onCreate — can read it
+     * without blocking on DataStore. Seeded `true` (optimistic) so a returning,
+     * fully-configured Xiaomi user never flashes onboarding while DataStore
+     * loads; the real value lands within a frame and the RESUME re-probe in
+     * CallrecApp self-corrects either way.
+     */
+    val miuiAcknowledged: StateFlow<Boolean> by lazy {
+        settings.miuiPermsAcknowledged.stateIn(
+            scope = appScope,
+            started = SharingStarted.Eagerly,
+            initialValue = true,
+        )
+    }
+
     val recorder: RecorderController by lazy {
         RecorderController(
             client = shizuku,
