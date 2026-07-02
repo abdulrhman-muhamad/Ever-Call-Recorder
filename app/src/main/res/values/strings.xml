@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Ever Call Recorder</string>
+    <string name="app_name">WhtsAgent Recorder</string>
     <string name="app_tagline">Call recording without compromise</string>
     <string name="onboarding_title">Call Recording via Shizuku</string>
     <string name="onboarding_step_install">Install Shizuku</string>

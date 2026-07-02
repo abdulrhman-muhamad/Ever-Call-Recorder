@@ -96,7 +96,7 @@ object CompletedRecordingNotification {
     private fun formatDuration(totalSec: Long): String {
         val m = totalSec / 60
         val s = totalSec % 60
-        return if (m == 0L) "${s} с" else "%d:%02d".format(m, s)
+        return if (m == 0L) "${s} s" else "%d:%02d".format(m, s)
     }
 
     private fun notificationIdFor(callId: String): Int =
