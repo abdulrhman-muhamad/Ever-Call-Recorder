@@ -52,11 +52,16 @@ class CallStateReceiver : BroadcastReceiver() {
                 val pending = goAsync()
                 val container = (ctx.applicationContext as App).container
                 container.appScope.launch {
-                    val auto = runCatching { container.settings.autoRecord.first() }
+                    // Auto-record decision now honours scope (all/contacts/…),
+                    // per-SIM, and include/exclude lists — not just the master
+                    // toggle. NOTE: on Android 9+ the number can be blank at
+                    // OFFHOOK for a non-default-dialer app, so contact/list
+                    // filters are best-effort here; scope=ALL always records.
+                    val auto = runCatching { AutoRecordDecider.shouldAutoRecord(ctx, number, callSimId = null) }
                         .getOrDefault(true)
                     try {
                         if (!auto) {
-                            L.d("Receiver", "auto-record OFF — skip FGS for $state")
+                            L.d("Receiver", "auto-record skipped by filter for $state")
                             return@launch
                         }
                         // Pre-promote the process to a foreground UI state
@@ -94,6 +99,9 @@ class CallStateReceiver : BroadcastReceiver() {
                         val svc = Intent(ctx, CallMonitorService::class.java).apply {
                             action = CallMonitorService.ACTION_CALL_START
                             putExtra(CallMonitorService.EXTRA_PHONE_STATE, state)
+                            // Incoming calls carry EXTRA_INCOMING_NUMBER; outgoing don't.
+                            // Best-effort direction for server reporting.
+                            putExtra(CallMonitorService.EXTRA_INCOMING, !number.isNullOrBlank())
                             if (number != null) putExtra(CallMonitorService.EXTRA_NUMBER, number)
                         }
                         runCatching { ContextCompat.startForegroundService(ctx, svc) }

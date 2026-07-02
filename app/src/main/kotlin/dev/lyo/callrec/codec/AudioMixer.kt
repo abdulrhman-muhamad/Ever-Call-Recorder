@@ -2,6 +2,7 @@
 package com.coolappstore.evercallrecorder.by.svhp.codec
 
 import com.coolappstore.evercallrecorder.by.svhp.core.L
+import com.coolappstore.evercallrecorder.by.svhp.storage.RecordingFile
 import java.io.File
 import java.io.RandomAccessFile
 import java.nio.ByteBuffer
@@ -10,12 +11,21 @@ import kotlin.math.min
 import kotlin.math.sqrt
 
 /**
- * Mixer for dual-stream call recordings:
+ * Two-output mixer for the dual-stream call recordings:
  *
  *  - [mixToStereoWav] — soft-pan (≈75/25) stereo for human listening (sharing,
  *    cached playback). Uplink leans left, downlink leans right, each still
  *    audible in the other ear so that pulling one earbud doesn't lose half the
  *    conversation.
+ *
+ *  - [mixNormalizedMonoForStt] — RMS-normalised mono sum for cloud audio LLM
+ *    transcription. Gemini's official docs (ai.google.dev/gemini-api/docs/audio)
+ *    state multi-channel audio is automatically combined into a single channel
+ *    before processing, so any panning is wasted bytes. The real diarization
+ *    bug is per-side level imbalance: uplink (mic-direct) is typically ~12 dB
+ *    louder than downlink (post-codec / acoustic loop), so the naive sum lets
+ *    the louder side dominate and the model only "hears" the user. We level
+ *    each side to a common target RMS before summing.
  *
  * Decoding is delegated to [PcmDecoder] — single source of truth for PCM
  * extraction; this object is purely the mix + RIFF-write step.
@@ -32,6 +42,80 @@ object AudioMixer {
      * Returns the output file on success, null if either decode fails.
      */
     fun mixToStereoWav(uplink: File, downlink: File, out: File): File? {
+        val stereo = buildStereoPcm(uplink, downlink) ?: return null
+        writeWav(out, SAMPLE_RATE, channels = 2, pcm = stereo)
+        L.i(TAG, "soft-pan mix → ${out.path} (${stereo.size} bytes WAV)")
+        return out
+    }
+
+    /**
+     * Same soft-pan stereo mix as [mixToStereoWav], but AAC-LC in an MP4 (.m4a)
+     * container — ~8× smaller than WAV, for uploading over the network.
+     * Returns null if decoding or encoding fails.
+     */
+    fun mixToStereoAac(uplink: File, downlink: File, out: File): File? {
+        val stereo = buildStereoPcm(uplink, downlink) ?: return null
+        return encodePcmToAac(stereo, channelCount = 2, sampleRateHz = SAMPLE_RATE, out = out)
+            ?.also { L.i(TAG, "soft-pan mix → ${it.path} (${it.length() / 1024}KB AAC)") }
+    }
+
+    /**
+     * Transcode a single-channel recording (e.g. a WAV captured when the user
+     * picked the lossless format) to a smaller mono AAC (.m4a) for upload. The
+     * source sample rate is read from the WAV header so the transcode never
+     * shifts pitch/speed; non-WAV sources fall back to [SAMPLE_RATE].
+     * Returns null on decode/encode failure.
+     */
+    fun transcodeToAac(src: File, out: File): File? {
+        val pcm = PcmDecoder.readBytes(src) ?: return null
+        val rate = readWavSampleRate(src) ?: SAMPLE_RATE
+        return encodePcmToAac(pcm, channelCount = 1, sampleRateHz = rate, out = out)
+            ?.also { L.i(TAG, "transcode → ${it.path} (${it.length() / 1024}KB AAC @${rate}Hz)") }
+    }
+
+    /** Feed [pcm] through [AacEncoder] in frame-aligned 16 KB chunks. */
+    private fun encodePcmToAac(
+        pcm: ByteArray,
+        channelCount: Int,
+        sampleRateHz: Int,
+        out: File,
+    ): File? {
+        val encoder = AacEncoder(RecordingFile(name = out.name, tag = "report-aac", path = out.path))
+        return try {
+            encoder.open(sampleRateHz, channelCount)
+            var off = 0
+            // 16 KB is a multiple of both the 4-byte stereo frame and the 2-byte
+            // mono frame, so every chunk is frame-aligned and the encoder's PTS
+            // bookkeeping stays exact.
+            val step = 16 * 1024
+            while (off < pcm.size) {
+                val n = min(step, pcm.size - off)
+                encoder.writePcm(pcm, off, n)
+                off += n
+            }
+            encoder.close()
+            out.takeIf { it.exists() && it.length() > 0 }
+        } catch (t: Throwable) {
+            L.w(TAG, "encodePcmToAac failed: ${t.message}")
+            null
+        }
+    }
+
+    /** Read the sample rate from a 44-byte canonical WAV header; null if not WAV. */
+    private fun readWavSampleRate(file: File): Int? = runCatching {
+        file.inputStream().use { ins ->
+            val hdr = ByteArray(44)
+            if (ins.read(hdr) < 44) return@use null
+            if (String(hdr, 0, 4) != "RIFF" || String(hdr, 8, 4) != "WAVE") return@use null
+            (hdr[24].toInt() and 0xff) or
+                ((hdr[25].toInt() and 0xff) shl 8) or
+                ((hdr[26].toInt() and 0xff) shl 16) or
+                ((hdr[27].toInt() and 0xff) shl 24)
+        }
+    }.getOrNull()
+
+    /** Decode both mono streams and soft-pan them into interleaved stereo int16. */
+    private fun buildStereoPcm(uplink: File, downlink: File): ByteArray? {
         val upPcm = PcmDecoder.readBytes(uplink) ?: return null
         val dnPcm = PcmDecoder.readBytes(downlink) ?: return null
         val frames = min(upPcm.size, dnPcm.size) / 2 // bytes per int16
@@ -49,8 +133,46 @@ object AudioMixer {
             outBuf.putShort(l.toShort())
             outBuf.putShort(r.toShort())
         }
-        writeWav(out, SAMPLE_RATE, channels = 2, pcm = stereo)
-        L.i(TAG, "soft-pan mix → ${out.path} (${stereo.size} bytes, $frames frames)")
+        return stereo
+    }
+
+    /**
+     * Decode both files, level-match each side to [TARGET_RMS], sum to mono
+     * int16, write a single-channel 16 kHz WAV. This is the file we feed to
+     * cloud STT so each speaker has comparable presence in the final mono
+     * spectrogram regardless of which side the recorder captured louder.
+     *
+     * The [MIN_RMS_FOR_GAIN] floor and [MAX_GAIN] ceiling prevent two
+     * pathologies: amplifying near-silent sides into pure noise, and blowing
+     * up a barely-audible side by 30+ dB when the other party never spoke
+     * loud enough to register.
+     */
+    fun mixNormalizedMonoForStt(uplink: File, downlink: File, out: File): File? {
+        val upPcm = PcmDecoder.readBytes(uplink) ?: return null
+        val dnPcm = PcmDecoder.readBytes(downlink) ?: return null
+        val upRms = rmsOf(upPcm)
+        val dnRms = rmsOf(dnPcm)
+        val upGain = gainFor(upRms)
+        val dnGain = gainFor(dnRms)
+
+        val frames = min(upPcm.size, dnPcm.size) / 2
+        val mono = ByteArray(frames * 2)
+        val upBuf = ByteBuffer.wrap(upPcm).order(ByteOrder.LITTLE_ENDIAN)
+        val dnBuf = ByteBuffer.wrap(dnPcm).order(ByteOrder.LITTLE_ENDIAN)
+        val outBuf = ByteBuffer.wrap(mono).order(ByteOrder.LITTLE_ENDIAN)
+        repeat(frames) {
+            val u = upBuf.short.toDouble() * upGain
+            val d = dnBuf.short.toDouble() * dnGain
+            val s = (u + d).toInt().coerceIn(-32768, 32767)
+            outBuf.putShort(s.toShort())
+        }
+        writeWav(out, SAMPLE_RATE, channels = 1, pcm = mono)
+        L.i(
+            TAG,
+            "stt-mix → ${out.path} frames=$frames " +
+                "upRms=${upRms.toInt()}×%.2f dnRms=${dnRms.toInt()}×%.2f"
+                    .format(upGain, dnGain),
+        )
         return out
     }
 

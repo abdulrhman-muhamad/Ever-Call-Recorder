@@ -7,12 +7,23 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
+import com.coolappstore.evercallrecorder.by.svhp.core.CryptoBox
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
 enum class RecordingFormat { WAV, AAC }
 
 enum class RecordingMode { SHIZUKU, ACCESSIBILITY }
+
+/**
+ * Which calls auto-record (and reporting) applies to — a single exclusive choice.
+ *  - ALL: every eligible call.
+ *  - CONTACTS: only numbers saved in Contacts.
+ *  - NON_CONTACTS: only numbers NOT saved in Contacts (caller ID present).
+ *  - UNKNOWN: only calls with no caller ID (private/withheld number).
+ */
+enum class AutoRecordScope { ALL, CONTACTS, NON_CONTACTS, UNKNOWN }
 
 class AppSettings(private val store: DataStore<Preferences>) {
 
@@ -76,6 +87,66 @@ class AppSettings(private val store: DataStore<Preferences>) {
         else it[Keys.CUSTOM_RECORDING_PATH] = v
     }
 
+    // ── Auto-record filtering ──────────────────────────────────────────────
+
+    val autoRecordScope: Flow<AutoRecordScope> = store.data.map {
+        runCatching { AutoRecordScope.valueOf(it[Keys.AUTO_RECORD_SCOPE] ?: AutoRecordScope.ALL.name) }
+            .getOrDefault(AutoRecordScope.ALL)
+    }
+    suspend fun setAutoRecordScope(v: AutoRecordScope) =
+        store.edit { it[Keys.AUTO_RECORD_SCOPE] = v.name }
+
+    /**
+     * PhoneAccountHandle id to restrict auto-record to a single SIM. `null`
+     * means "any SIM" and is the default. Only relevant on dual-SIM devices.
+     */
+    val autoRecordSimId: Flow<String?> = store.data.map { it[Keys.AUTO_RECORD_SIM_ID] }
+    suspend fun setAutoRecordSimId(v: String?) = store.edit {
+        if (v.isNullOrBlank()) it.remove(Keys.AUTO_RECORD_SIM_ID) else it[Keys.AUTO_RECORD_SIM_ID] = v
+    }
+
+    /** Numbers to ALWAYS auto-record — overrides SIM filter and scope. */
+    val includeNumbers: Flow<Set<String>> = store.data.map { it[Keys.INCLUDE_NUMBERS] ?: emptySet() }
+    suspend fun setIncludeNumbers(v: Set<String>) = store.edit { it[Keys.INCLUDE_NUMBERS] = v }
+
+    /** Numbers to NEVER record — a hard block, honoured even for a manual tap. */
+    val excludeNumbers: Flow<Set<String>> = store.data.map { it[Keys.EXCLUDE_NUMBERS] ?: emptySet() }
+    suspend fun setExcludeNumbers(v: Set<String>) = store.edit { it[Keys.EXCLUDE_NUMBERS] = v }
+
+    // ── Call reporting (post a call-log entry to a server after each call) ──
+
+    val reportingEnabled: Flow<Boolean> = store.data.map { it[Keys.REPORT_ENABLED] ?: true }
+    suspend fun setReportingEnabled(v: Boolean) = store.edit { it[Keys.REPORT_ENABLED] = v }
+
+    /** Full acr-webhook URL, e.g. https://host/api/acr-calls/acr-webhook */
+    val reportUrl: Flow<String> = store.data.map { it[Keys.REPORT_URL] ?: "" }
+    suspend fun setReportUrl(v: String) = store.edit { it[Keys.REPORT_URL] = v.trim() }
+
+    /** Per-user secret (acr_…) — stored encrypted via CryptoBox. */
+    val reportSecret: Flow<String> = store.data.map {
+        val raw = it[Keys.REPORT_SECRET] ?: ""
+        if (raw.isBlank()) "" else CryptoBox.decryptOrPassthrough(raw)
+    }
+    suspend fun setReportSecret(v: String) = store.edit {
+        if (v.isBlank()) it.remove(Keys.REPORT_SECRET) else it[Keys.REPORT_SECRET] = CryptoBox.encrypt(v.trim())
+    }
+
+    val reportScope: Flow<AutoRecordScope> = store.data.map {
+        runCatching { AutoRecordScope.valueOf(it[Keys.REPORT_SCOPE] ?: AutoRecordScope.ALL.name) }
+            .getOrDefault(AutoRecordScope.ALL)
+    }
+    suspend fun setReportScope(v: AutoRecordScope) = store.edit { it[Keys.REPORT_SCOPE] = v.name }
+
+    /** PhoneAccountHandle id to report from a single SIM; null = any SIM. */
+    val reportSimId: Flow<String?> = store.data.map { it[Keys.REPORT_SIM_ID] }
+    suspend fun setReportSimId(v: String?) = store.edit {
+        if (v.isNullOrBlank()) it.remove(Keys.REPORT_SIM_ID) else it[Keys.REPORT_SIM_ID] = v
+    }
+
+    /** Also upload the recording audio (not just the call-log metadata). */
+    val reportUploadRecording: Flow<Boolean> = store.data.map { it[Keys.REPORT_UPLOAD] ?: true }
+    suspend fun setReportUploadRecording(v: Boolean) = store.edit { it[Keys.REPORT_UPLOAD] = v }
+
     companion object
 
     private object Keys {
@@ -90,5 +161,15 @@ class AppSettings(private val store: DataStore<Preferences>) {
         val CLEANUP_MAX_AGE_DAYS = intPreferencesKey("auto_cleanup_max_age_days")
         val CLEANUP_MAX_SIZE_GB = intPreferencesKey("auto_cleanup_max_size_gb")
         val CUSTOM_RECORDING_PATH = stringPreferencesKey("custom_recording_path")
+        val AUTO_RECORD_SCOPE = stringPreferencesKey("auto_record_scope")
+        val AUTO_RECORD_SIM_ID = stringPreferencesKey("auto_record_sim_id")
+        val INCLUDE_NUMBERS = stringSetPreferencesKey("auto_record_include_numbers")
+        val EXCLUDE_NUMBERS = stringSetPreferencesKey("auto_record_exclude_numbers")
+        val REPORT_ENABLED = booleanPreferencesKey("report_enabled")
+        val REPORT_URL = stringPreferencesKey("report_url")
+        val REPORT_SECRET = stringPreferencesKey("report_secret")
+        val REPORT_SCOPE = stringPreferencesKey("report_scope")
+        val REPORT_SIM_ID = stringPreferencesKey("report_sim_id")
+        val REPORT_UPLOAD = booleanPreferencesKey("report_upload_recording")
     }
 }

@@ -14,6 +14,8 @@ import com.coolappstore.evercallrecorder.by.svhp.core.L
 import com.coolappstore.evercallrecorder.by.svhp.notify.CompletedRecordingNotification
 import com.coolappstore.evercallrecorder.by.svhp.notify.RecordingNotification
 import com.coolappstore.evercallrecorder.by.svhp.recorder.DaemonHealth
+import com.coolappstore.evercallrecorder.by.svhp.report.CallReporter
+import com.coolappstore.evercallrecorder.by.svhp.report.ReportQueue
 import com.coolappstore.evercallrecorder.by.svhp.recorder.RecorderController
 import com.coolappstore.evercallrecorder.by.svhp.storage.CallRecord
 import kotlinx.coroutines.flow.collectLatest
@@ -49,6 +51,8 @@ class CallMonitorService : LifecycleService() {
     private var currentCallId: String? = null
     @Volatile private var callStartedAt: Long? = null
     @Volatile private var initialNumber: String? = null
+    /** True when this call was incoming (carried an incoming number). Used for report direction. */
+    @Volatile private var initialIncoming: Boolean = false
     private var manualMode: Boolean = false
     private var recordingStarted: Boolean = false
 
@@ -92,6 +96,7 @@ class CallMonitorService : LifecycleService() {
             }
             ACTION_CALL_START -> {
                 manualMode = false
+                initialIncoming = intent?.getBooleanExtra(EXTRA_INCOMING, false) ?: false
                 // Empty on Android 9+ for non-default-dialer apps; CallLog
                 // post-mortem in stopRecording covers that case.
                 intent?.getStringExtra(EXTRA_NUMBER)?.takeIf { it.isNotBlank() }?.let {
@@ -292,9 +297,11 @@ class CallMonitorService : LifecycleService() {
         val id = currentCallId
         val startedAt = callStartedAt
         val wasVoiceMemo = manualMode
+        val wasIncoming = initialIncoming
         currentCallId = null
         callStartedAt = null
         initialNumber = null
+        initialIncoming = false
         recordingStarted = false
         val appCtx = applicationContext
 
@@ -321,6 +328,7 @@ class CallMonitorService : LifecycleService() {
                         }
                     }
                 }.onFailure { L.w("Service", "post-mortem contact lookup failed: ${it.message}") }
+                if (!wasVoiceMemo) maybeReport(appCtx, id, wasIncoming)
             }
             return
         }
@@ -373,6 +381,7 @@ class CallMonitorService : LifecycleService() {
                     }
                 }
             }.onFailure { L.w("Service", "post-mortem contact lookup failed: ${it.message}") }
+            if (!wasVoiceMemo) maybeReport(appCtx, id, wasIncoming)
         }
     }
 
@@ -399,6 +408,27 @@ class CallMonitorService : LifecycleService() {
         runCatching {
             container.db.calls().updateOutcome(id, mode, up, dn)
         }.onFailure { L.w("Service", "persistOutcomeFinal failed: ${it.message}") }
+    }
+
+    /**
+     * Queue a server report for a finished call (metadata + optional audio).
+     * No-op unless reporting is configured and the number passes the report
+     * scope/SIM filters. Delivery is durable and retried by [ReportQueue], so
+     * this only enqueues — it never blocks on the network.
+     */
+    private suspend fun maybeReport(appCtx: android.content.Context, id: String, incoming: Boolean) {
+        runCatching {
+            val rec = container.db.calls().byId(id) ?: return
+            // callSimId is unknown on the standalone receiver path → null (any SIM).
+            if (!CallReporter.shouldReport(appCtx, rec.contactNumber, null)) return
+            val startMs = rec.startedAt
+            val durationSec =
+                ((rec.endedAt ?: System.currentTimeMillis()) - rec.startedAt).coerceAtLeast(0) / 1000
+            ReportQueue.enqueueMeta(appCtx, rec.contactNumber, incoming, startMs, durationSec, ringSec = 0)
+            if (container.settings.reportUploadRecording.first()) {
+                ReportQueue.enqueueFile(appCtx, id, rec.contactNumber, incoming, startMs)
+            }
+        }.onFailure { L.w("Service", "report enqueue failed: ${it.message}") }
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
@@ -503,6 +533,7 @@ class CallMonitorService : LifecycleService() {
 
         const val EXTRA_PHONE_STATE = "phone_state"
         const val EXTRA_NUMBER = "number"
+        const val EXTRA_INCOMING = "incoming"
 
         /** Sentinel `mode` value persisted for voice-memo (manual) sessions. */
         const val MODE_VOICE_MEMO = "VoiceMemo"

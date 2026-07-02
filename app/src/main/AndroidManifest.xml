@@ -3,10 +3,13 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <!--
-      INTERNET is required for future features only.
-      Recording itself never touches the network.
+      INTERNET is used by the optional call-reporting webhook (posts call-log
+      metadata / audio to the user's own server). Recording itself never touches
+      the network; reporting stays off unless a URL + secret are configured.
     -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Re-drain the offline report queue after a reboot. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- Telephony state for auto-detect of OFFHOOK/IDLE transitions. -->
@@ -188,5 +191,21 @@
                 android:name="android.accessibilityservice"
                 android:resource="@xml/accessibility_service_config" />
         </service>
+
+        <!--
+          Re-drains the offline server-report queue after a device reboot, so
+          reports queued before the restart are delivered without waiting for
+          the user to reopen the app. Cold-starts the process → App.onCreate →
+          ReportSync.start.
+        -->
+        <receiver
+            android:name=".report.BootReportReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>
