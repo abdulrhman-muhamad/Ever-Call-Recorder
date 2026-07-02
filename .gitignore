@@ -31,5 +31,11 @@ scratch/
 IMPLEMENTATION_GUIDE.md
 
 # Local dev aids — kept on disk, never published to the fork.
-CLAUDE.md
 /plan/
+
+# Claude Code — never publish ANYTHING Claude-related.
+.claude/
+**/.claude/
+CLAUDE.md
+CLAUDE.local.md
+.claude.json
