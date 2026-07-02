@@ -24,7 +24,7 @@ val appPackageId = "com.whtsagent.recorder"
 //     AIDL contract changed — in-flight v11 daemon must respawn.
 // 13: setAppOpAllow()/getAppOpMode() added for MIUI proprietary app-ops.
 //     AIDL contract changed — in-flight v12 daemon must respawn.
-val userServiceVersion = 13
+val userServiceVersion = 15
 
 // Auto-derive the release certificate's SHA-256 from the keystore so the
 // verifyCaller() pin always matches the APK we just signed — without forcing

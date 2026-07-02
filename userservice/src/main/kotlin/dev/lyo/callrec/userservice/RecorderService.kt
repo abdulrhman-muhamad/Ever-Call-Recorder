@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package com.coolappstore.evercallrecorder.by.svhp.userservice
 
+import android.app.AppOpsManager
 import android.content.Context
 import android.content.pm.PackageManager
 import android.media.AudioFormat
@@ -185,9 +186,53 @@ class RecorderService : IRecorderService.Stub() {
     override fun getAppOpMode(packageName: String, op: String): String? {
         verifyCaller()
         if (!isOurPackage(packageName) || !isSafeOp(op)) return null
+        // AppOps stores only NON-default modes, and `appops get` prints only
+        // stored entries. On HyperOS the default for some MIUI ops (Autostart
+        // 10008, shortcuts 10017) is ALLOW — granting them via the Settings
+        // toggle DELETES the explicit entry, so `appops get` answers
+        // "No operations." for a permission that is actually GRANTED (and the
+        // same output means DENIED for ops whose default is ignore, like
+        // 10020/10021). checkOpNoThrow resolves the EFFECTIVE mode — stored
+        // entry or the ROM's per-op default — i.e. what MIUI Settings shows.
+        // Numeric MIUI codes only; named AOSP ops keep the text path below.
+        op.toIntOrNull()?.let { code ->
+            effectiveOpMode(code, packageName)?.let { return it }
+        }
         val r = runShell(arrayOf("appops", "get", packageName, op))
         return if (r.exitCode == 0) r.stdout.trim().ifEmpty { null } else null
     }
+
+    /**
+     * Effective mode of numeric op [code] via the hidden int-code
+     * `AppOpsManager.checkOpNoThrow` overload (exempted by
+     * [HiddenApiBootstrap]; the public String overload rejects op codes it
+     * doesn't know, which includes every MIUI-proprietary one). Returns the
+     * mode as the "allow"/"ignore" vocabulary the app-side parser expects,
+     * or null on any failure so the caller falls back to `appops get`.
+     */
+    private fun effectiveOpMode(code: Int, packageName: String): String? = runCatching {
+        val ctx = ServiceContext.get()
+        val uid = ctx.packageManager.getPackageUid(packageName, 0)
+        val appOps = ctx.getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
+        val mode = AppOpsManager::class.java
+            .getMethod(
+                "checkOpNoThrow",
+                Int::class.javaPrimitiveType,
+                Int::class.javaPrimitiveType,
+                String::class.java,
+            )
+            .invoke(appOps, code, uid, packageName) as Int
+        when (mode) {
+            AppOpsManager.MODE_ALLOWED -> "allow"
+            AppOpsManager.MODE_IGNORED -> "ignore"
+            AppOpsManager.MODE_ERRORED -> "deny"
+            AppOpsManager.MODE_DEFAULT -> "default"
+            AppOpsManager.MODE_FOREGROUND -> "foreground"
+            else -> "mode($mode)"
+        }
+    }.onFailure {
+        Log.w(TAG, "effectiveOpMode($code) failed — falling back to appops get", it)
+    }.getOrNull()
 
     // Only ever operate on our own package — never let the bound app turn this
     // into a generic "grant any op to any package" primitive.

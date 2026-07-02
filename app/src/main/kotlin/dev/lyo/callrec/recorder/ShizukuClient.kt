@@ -162,6 +162,6 @@ class ShizukuClient(private val ctx: Context) {
     companion object {
         private const val REQUEST_CODE = 0xCA11
         // Keep in lock-step with userservice/build.gradle.kts `userServiceVersion`.
-        private const val USER_SERVICE_VERSION = 13
+        private const val USER_SERVICE_VERSION = 15
     }
 }
