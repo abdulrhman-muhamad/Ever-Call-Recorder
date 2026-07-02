@@ -29,3 +29,7 @@ scratch/
 
 # Internal engineering doc — kept locally, not part of the public release.
 IMPLEMENTATION_GUIDE.md
+
+# Local dev aids — kept on disk, never published to the fork.
+CLAUDE.md
+/plan/
