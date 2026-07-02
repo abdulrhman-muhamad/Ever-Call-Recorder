@@ -28,9 +28,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.ChevronRight
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material.icons.outlined.SystemUpdate
+import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonGroup
@@ -40,9 +44,11 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.InputChip
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
@@ -70,6 +76,8 @@ import com.coolappstore.evercallrecorder.by.svhp.BuildConfig
 import com.coolappstore.evercallrecorder.by.svhp.R
 import com.coolappstore.evercallrecorder.by.svhp.di.AppContainer
 import com.coolappstore.evercallrecorder.by.svhp.recorder.Capabilities
+import com.coolappstore.evercallrecorder.by.svhp.report.CallReporter
+import com.coolappstore.evercallrecorder.by.svhp.settings.AutoRecordScope
 import com.coolappstore.evercallrecorder.by.svhp.recorder.Strategy
 import com.coolappstore.evercallrecorder.by.svhp.settings.RecordingFormat
 import com.coolappstore.evercallrecorder.by.svhp.settings.RecordingMode
@@ -118,6 +126,16 @@ fun SettingsScreen(
     val cleanupSizeGb by container.settings.autoCleanupMaxSizeGb.collectAsState(initial = null)
     val capabilities: Capabilities? by container.capabilities.flow.collectAsState(initial = null)
     val customRecordingPath: String? by container.settings.customRecordingPath.collectAsState(initial = null)
+    // Auto-record filtering + call-reporting (backported from the dialer build).
+    val autoRecordScope by container.settings.autoRecordScope.collectAsState(initial = AutoRecordScope.ALL)
+    val includeNumbers by container.settings.includeNumbers.collectAsState(initial = emptySet())
+    val excludeNumbers by container.settings.excludeNumbers.collectAsState(initial = emptySet())
+    val reportingEnabled by container.settings.reportingEnabled.collectAsState(initial = true)
+    val reportUrl by container.settings.reportUrl.collectAsState(initial = "")
+    val reportSecret by container.settings.reportSecret.collectAsState(initial = "")
+    val reportUpload by container.settings.reportUploadRecording.collectAsState(initial = true)
+    val reportScope by container.settings.reportScope.collectAsState(initial = AutoRecordScope.ALL)
+    var secretVisible by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
     val cleanupAppliedMsg = stringResource(R.string.settings_cleanup_applied)
     var showLegalSheet by remember { mutableStateOf(false) }
@@ -377,6 +395,121 @@ fun SettingsScreen(
                     }
                 }
 
+                // ── Auto-record filter ──────────────────────────────────────
+                Staggered(120) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        SectionHeader("Auto-record filter")
+                        SettingCard {
+                            ScopeChooserRow(
+                                title = "Which calls to auto-record",
+                                desc = "Applies when auto-record is on. On Android 9+ the number may be unknown at call start, so contact filters are best-effort.",
+                                current = autoRecordScope,
+                                onSelect = { scope.launch { container.settings.setAutoRecordScope(it) } },
+                            )
+                        }
+                    }
+                }
+
+                // ── Recording exceptions ────────────────────────────────────
+                Staggered(120) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        SectionHeader("Recording exceptions")
+                        SettingCard {
+                            NumberListEditor(
+                                title = "Always record",
+                                desc = "These numbers are always recorded — overrides the filter above.",
+                                numbers = includeNumbers,
+                                onAdd = { n -> scope.launch { container.settings.setIncludeNumbers(includeNumbers + n) } },
+                                onRemove = { n -> scope.launch { container.settings.setIncludeNumbers(includeNumbers - n) } },
+                            )
+                            Divider()
+                            NumberListEditor(
+                                title = "Never record",
+                                desc = "These numbers are never recorded — a hard block.",
+                                numbers = excludeNumbers,
+                                onAdd = { n -> scope.launch { container.settings.setExcludeNumbers(excludeNumbers + n) } },
+                                onRemove = { n -> scope.launch { container.settings.setExcludeNumbers(excludeNumbers - n) } },
+                            )
+                        }
+                    }
+                }
+
+                // ── Call reporting (post call log to a server) ──────────────
+                Staggered(120) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        SectionHeader("Call reporting")
+                        SettingCard {
+                            ToggleRow(
+                                title = "Report calls to a server",
+                                desc = "After each call, POST the call log to your webhook (ACR-compatible).",
+                                checked = reportingEnabled,
+                                onCheckedChange = { scope.launch { container.settings.setReportingEnabled(it) } },
+                            )
+                            Divider()
+                            Column(modifier = Modifier.padding(20.dp)) {
+                                OutlinedTextField(
+                                    value = reportUrl,
+                                    onValueChange = { scope.launch { container.settings.setReportUrl(it) } },
+                                    label = { Text("Webhook URL") },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                                Spacer(Modifier.height(8.dp))
+                                OutlinedTextField(
+                                    value = reportSecret,
+                                    onValueChange = { scope.launch { container.settings.setReportSecret(it) } },
+                                    label = { Text("Secret") },
+                                    singleLine = true,
+                                    visualTransformation = if (secretVisible) {
+                                        androidx.compose.ui.text.input.VisualTransformation.None
+                                    } else {
+                                        androidx.compose.ui.text.input.PasswordVisualTransformation()
+                                    },
+                                    trailingIcon = {
+                                        IconButton(onClick = { secretVisible = !secretVisible }) {
+                                            Icon(
+                                                if (secretVisible) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
+                                                contentDescription = "Toggle secret visibility",
+                                            )
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                                Spacer(Modifier.height(8.dp))
+                                OutlinedButton(
+                                    onClick = {
+                                        scope.launch {
+                                            val msg = when (val r = CallReporter.testConnection()) {
+                                                CallReporter.TestOutcome.MissingConfig -> "Set the URL and secret first."
+                                                CallReporter.TestOutcome.Ok -> "Connection OK."
+                                                CallReporter.TestOutcome.BadSecret -> "Secret rejected (401)."
+                                                is CallReporter.TestOutcome.Failed -> "Server returned HTTP ${r.code}."
+                                                is CallReporter.TestOutcome.Error -> "Error: ${r.message}"
+                                            }
+                                            snackbar.showSnackbar(msg)
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) { Text("Test connection") }
+                            }
+                            Divider()
+                            ToggleRow(
+                                title = "Also upload recording audio",
+                                desc = "Upload the mixed recording, not just the call-log metadata.",
+                                checked = reportUpload,
+                                onCheckedChange = { scope.launch { container.settings.setReportUploadRecording(it) } },
+                            )
+                            Divider()
+                            ScopeChooserRow(
+                                title = "Which calls to report",
+                                desc = "Filter which calls are reported to the server.",
+                                current = reportScope,
+                                onSelect = { scope.launch { container.settings.setReportScope(it) } },
+                            )
+                        }
+                    }
+                }
+
                 // ── Recording method ────────────────────────────────────────
                 Staggered(160) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -540,6 +673,112 @@ fun SettingsScreen(
                 onDismiss = { showLegalSheet = false },
             )
         }
+    }
+}
+
+@Composable
+private fun ScopeChooserRow(
+    title: String,
+    desc: String,
+    current: AutoRecordScope,
+    onSelect: (AutoRecordScope) -> Unit,
+) {
+    Column(modifier = Modifier.padding(20.dp)) {
+        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(2.dp))
+        Text(desc, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(12.dp))
+        val options = listOf(
+            AutoRecordScope.ALL to "All",
+            AutoRecordScope.CONTACTS to "Contacts",
+            AutoRecordScope.NON_CONTACTS to "Non-contacts",
+            AutoRecordScope.UNKNOWN to "Unknown",
+        )
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            options.forEach { (value, label) ->
+                ToggleButton(
+                    checked = current == value,
+                    onCheckedChange = { onSelect(value) },
+                    shapes = ToggleButtonDefaults.shapes(),
+                ) { Text(label) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun NumberListEditor(
+    title: String,
+    desc: String,
+    numbers: Set<String>,
+    onAdd: (String) -> Unit,
+    onRemove: (String) -> Unit,
+) {
+    var showAdd by remember { mutableStateOf(false) }
+    var input by remember { mutableStateOf("") }
+    Column(modifier = Modifier.padding(20.dp)) {
+        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(2.dp))
+        Text(desc, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(12.dp))
+        if (numbers.isEmpty()) {
+            Text(
+                "None yet.",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                numbers.sorted().forEach { number ->
+                    InputChip(
+                        selected = false,
+                        onClick = { onRemove(number) },
+                        label = { Text(number) },
+                        trailingIcon = {
+                            Icon(Icons.Outlined.Close, contentDescription = "Remove", modifier = Modifier.size(18.dp))
+                        },
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        OutlinedButton(onClick = { input = ""; showAdd = true }) {
+            Icon(Icons.Outlined.Add, contentDescription = null)
+            Spacer(Modifier.size(8.dp))
+            Text("Add number")
+        }
+    }
+
+    if (showAdd) {
+        AlertDialog(
+            onDismissRequest = { showAdd = false },
+            title = { Text(title) },
+            text = {
+                OutlinedTextField(
+                    value = input,
+                    onValueChange = { input = it },
+                    label = { Text("Phone number") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val n = input.trim()
+                    if (n.isNotEmpty()) onAdd(n)
+                    showAdd = false
+                }) { Text("Add") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAdd = false }) { Text("Cancel") }
+            },
+        )
     }
 }
 

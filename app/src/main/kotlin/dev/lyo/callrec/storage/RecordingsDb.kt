@@ -132,14 +132,35 @@ val MIGRATION_1_2: Migration = object : Migration(1, 2) {
     }
 }
 
-@Database(entities = [CallRecord::class], version = 2, exportSchema = true)
+// v2→v3: adds the durable report queue (offline retry for server reporting).
+// Column shape must match what Room generates for PendingReport.
+val MIGRATION_2_3: Migration = object : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `pending_reports` (" +
+                "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`kind` TEXT NOT NULL, " +
+                "`call_id` TEXT, " +
+                "`number` TEXT, " +
+                "`incoming` INTEGER NOT NULL, " +
+                "`date_ms` INTEGER NOT NULL, " +
+                "`duration_sec` INTEGER NOT NULL, " +
+                "`ring_sec` INTEGER NOT NULL, " +
+                "`created_at` INTEGER NOT NULL, " +
+                "`attempts` INTEGER NOT NULL)",
+        )
+    }
+}
+
+@Database(entities = [CallRecord::class, PendingReport::class], version = 3, exportSchema = true)
 abstract class RecordingsDb : RoomDatabase() {
     abstract fun calls(): CallDao
+    abstract fun pendingReports(): PendingReportDao
 
     companion object {
         fun create(ctx: Context): RecordingsDb =
             Room.databaseBuilder(ctx, RecordingsDb::class.java, "callrec.db")
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .fallbackToDestructiveMigrationOnDowngrade(dropAllTables = true)
                 .build()
     }

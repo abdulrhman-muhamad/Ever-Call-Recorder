@@ -8,8 +8,10 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import com.coolappstore.evercallrecorder.by.svhp.cleanup.CleanupJob
 import com.coolappstore.evercallrecorder.by.svhp.di.AppContainer
+import com.coolappstore.evercallrecorder.by.svhp.di.RecorderGraph
 import com.coolappstore.evercallrecorder.by.svhp.notify.DaemonHealthNotification
 import com.coolappstore.evercallrecorder.by.svhp.notify.NotificationChannels
+import com.coolappstore.evercallrecorder.by.svhp.report.ReportSync
 import java.io.File
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
@@ -37,7 +39,9 @@ class App : Application() {
                 container.appScope.launch { container.shizuku.verifyHealth() }
             }
         })
-        container = AppContainer(this)
+        // Single DI container, also exposed process-wide via RecorderGraph so
+        // context-less code (report queue, boot receiver) can reach it.
+        container = RecorderGraph.install(this)
         container.shizuku.health
             .onEach { DaemonHealthNotification.update(this, it) }
             .launchIn(container.appScope)
@@ -71,6 +75,10 @@ class App : Application() {
             runCatching { reconcileMissingFiles() }
                 .onFailure { Log.w("Callrec", "[App] reconcile failed: ${it.message}", it) }
         }
+        // Start the server-report sync: registers a connectivity callback and
+        // does a one-shot drain to flush any reports queued while offline.
+        runCatching { ReportSync.start(this) }
+            .onFailure { Log.w("Callrec", "[App] ReportSync.start failed: ${it.message}", it) }
         Log.i("Callrec", "[App] onCreate done (Shizuku pre-warm queued)")
     }
 

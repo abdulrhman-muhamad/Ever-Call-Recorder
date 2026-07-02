@@ -36,6 +36,15 @@ object MiuiPermissions {
     const val OP_SHOW_WHEN_LOCKED = "10020"         // Show on lock screen
     const val OP_BACKGROUND_START_ACTIVITY = "10021" // "Display pop-up windows while in background"
 
+    // Autostart reads from op 10008 ONLY. Empirically on HyperOS (V816) op 10008
+    // is the one that actually tracks the user's Autostart toggle — it flips
+    // allow→ignore when the permission is revoked. Op 10007 looked like a HyperOS
+    // alias but is a permanently-"allow" decoy: it never changes, so OR-ing it in
+    // made Autostart always read granted and broke revoke-detection. Keep this a
+    // single-element list so the multi-candidate read/write plumbing still works
+    // if a future ROM genuinely needs a second code.
+    val autoStartOpCandidates: List<String> = listOf(OP_AUTO_START)
+
     // Named AOSP op behind MIUI's "Display pop-up windows" toggle.
     const val OP_SYSTEM_ALERT_WINDOW = "SYSTEM_ALERT_WINDOW"
 
@@ -87,15 +96,34 @@ object MiuiPermissions {
     fun autoGrant(service: IRecorderService, packageName: String): Map<String, Boolean> {
         val results = LinkedHashMap<String, Boolean>()
         for (op in grantableOps) {
-            val setOk = runCatching { service.setAppOpAllow(packageName, op) == 1 }
-                .getOrElse { Log.w(TAG, "autoGrant set $op threw", it); false }
-            val verified = runCatching { service.getAppOpMode(packageName, op) }
-                .getOrNull()
-                ?.contains("allow", ignoreCase = true) == true
-            results[op] = verified || setOk
+            // Autostart lives under a different op code per ROM (10008 classic,
+            // 10007 HyperOS) — try to set both so we hit whichever this ROM uses.
+            val toSet = if (op == OP_AUTO_START) autoStartOpCandidates else listOf(op)
+            toSet.forEach { candidate ->
+                runCatching { service.setAppOpAllow(packageName, candidate) }
+                    .onFailure { Log.w(TAG, "autoGrant set $candidate threw", it) }
+            }
+            // Trust the READ-BACK, not the set's exit code. On MIUI/HyperOS some
+            // ops (notably Autostart) accept `appops set … allow` with exit 0 yet
+            // never persist — counting exit-0 as success made auto-grant falsely
+            // claim Autostart was granted.
+            results[op] = isOpAllowed(service, packageName, op)
         }
         Log.i(TAG, "MIUI autoGrant results: $results")
         return results
+    }
+
+    /**
+     * True if [op] reads "allow". Autostart is special: its op code varies by
+     * ROM (10008 ↔ 10007), so it's granted when EITHER candidate reads allow.
+     */
+    private fun isOpAllowed(service: IRecorderService, packageName: String, op: String): Boolean {
+        val candidates = if (op == OP_AUTO_START) autoStartOpCandidates else listOf(op)
+        return candidates.any { candidate ->
+            runCatching { service.getAppOpMode(packageName, candidate) }
+                .getOrNull()
+                ?.contains("allow", ignoreCase = true) == true
+        }
     }
 
     /**
@@ -111,9 +139,8 @@ object MiuiPermissions {
     ): Map<String, Boolean> {
         val out = LinkedHashMap<String, Boolean>()
         for (op in ops) {
-            out[op] = runCatching { service.getAppOpMode(packageName, op) }
-                .getOrNull()
-                ?.contains("allow", ignoreCase = true) == true
+            // isOpAllowed handles Autostart's ROM-dependent op code (10008/10007).
+            out[op] = isOpAllowed(service, packageName, op)
         }
         return out
     }
