@@ -14,7 +14,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.activity.ComponentActivity
+import androidx.fragment.app.FragmentActivity
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.graphics.Color
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import com.coolappstore.evercallrecorder.by.svhp.App
@@ -23,9 +24,12 @@ import com.coolappstore.evercallrecorder.by.svhp.notify.DaemonHealthNotification
 import com.coolappstore.evercallrecorder.by.svhp.permissions.SetupStatus
 import com.coolappstore.evercallrecorder.by.svhp.ui.nav.CallrecApp
 import com.coolappstore.evercallrecorder.by.svhp.ui.theme.CallrecTheme
+import com.coolappstore.evercallrecorder.by.svhp.ui.lock.AppLockScreen
 import kotlinx.coroutines.launch
 
-class MainActivity : ComponentActivity() {
+// FragmentActivity (not ComponentActivity) because androidx.biometric's
+// BiometricPrompt needs one to host its prompt fragment on API < 28 paths.
+class MainActivity : FragmentActivity() {
 
     private var pendingCallId by mutableStateOf<String?>(null)
 
@@ -57,11 +61,25 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background,
                 ) {
-                    CallrecApp(
-                        container = container,
-                        startWithOnboarding = !initialStatus.allReady,
-                        initialPlaybackCallId = pendingCallId,
-                    )
+                    // App lock gate. `null` = settings not read yet: draw
+                    // nothing for that frame rather than flash the library
+                    // before we know whether it should be hidden.
+                    val lockState by container.settings.appLockState.collectAsState(initial = null)
+                    val unlocked by container.appLock.unlocked.collectAsState()
+                    val ls = lockState
+                    when {
+                        ls == null -> Unit
+                        ls.enabled && !unlocked -> AppLockScreen(
+                            method = ls.method,
+                            onVerifySecret = { ls.verify(it) },
+                            onUnlocked = { container.appLock.unlock() },
+                        )
+                        else -> CallrecApp(
+                            container = container,
+                            startWithOnboarding = !initialStatus.allReady,
+                            initialPlaybackCallId = pendingCallId,
+                        )
+                    }
                 }
             }
         }
@@ -93,6 +111,13 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         (application as App).container.shizuku.refresh()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        // Re-lock when the app leaves the foreground — but not on rotation,
+        // where onStop fires for the old Activity while the user never left.
+        if (!isChangingConfigurations) (application as App).container.appLock.lock()
     }
 
     override fun onDestroy() {

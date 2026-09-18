@@ -75,6 +75,10 @@ import androidx.compose.ui.window.Dialog
 import com.coolappstore.evercallrecorder.by.svhp.BuildConfig
 import com.coolappstore.evercallrecorder.by.svhp.R
 import com.coolappstore.evercallrecorder.by.svhp.di.AppContainer
+import com.coolappstore.evercallrecorder.by.svhp.settings.AppLockMethod
+import com.coolappstore.evercallrecorder.by.svhp.ui.lock.AppLockSetupDialog
+import com.coolappstore.evercallrecorder.by.svhp.ui.lock.AppLockVerifyDialog
+import com.coolappstore.evercallrecorder.by.svhp.ui.lock.appLockMethodLabel
 import com.coolappstore.evercallrecorder.by.svhp.storage.RecordingFileNameFormatter
 import com.coolappstore.evercallrecorder.by.svhp.storage.CallRecord
 import com.coolappstore.evercallrecorder.by.svhp.recorder.Capabilities
@@ -136,6 +140,10 @@ fun SettingsScreen(
     val reportUrl by container.settings.reportUrl.collectAsState(initial = "")
     val nameTemplate by container.settings.exportNameTemplate
         .collectAsState(initial = RecordingFileNameFormatter.DEFAULT_TEMPLATE)
+    val lockState by container.settings.appLockState.collectAsState(initial = null)
+    var showLockSetup by remember { mutableStateOf(false) }
+    var showLockVerify by remember { mutableStateOf(false) }
+    var pendingAfterLockVerify by remember { mutableStateOf<(() -> Unit)?>(null) }
     val reportSecret by container.settings.reportSecret.collectAsState(initial = "")
     val reportUpload by container.settings.reportUploadRecording.collectAsState(initial = true)
     val reportScope by container.settings.reportScope.collectAsState(initial = AutoRecordScope.ALL)
@@ -683,6 +691,42 @@ fun SettingsScreen(
                 // ── About ───────────────────────────────────────────────────
                 Staggered(400) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        SectionHeader(stringResource(R.string.settings_section_security))
+                        SettingCard {
+                            val ls = lockState
+                            ToggleRow(
+                                title = stringResource(R.string.settings_app_lock_title),
+                                desc = if (ls?.enabled == true) {
+                                    stringResource(R.string.settings_app_lock_on, appLockMethodLabel(ls.method))
+                                } else {
+                                    stringResource(R.string.settings_app_lock_desc)
+                                },
+                                checked = ls?.enabled == true,
+                                onCheckedChange = { on ->
+                                    if (on) {
+                                        showLockSetup = true
+                                    } else {
+                                        // Turning off requires proving you can unlock first.
+                                        pendingAfterLockVerify = { scope.launch { container.settings.clearAppLock() } }
+                                        showLockVerify = true
+                                    }
+                                },
+                                enabled = ls != null,
+                            )
+                            if (ls?.enabled == true) {
+                                Divider()
+                                LinkRow(
+                                    title = stringResource(R.string.settings_app_lock_change),
+                                    subtitle = stringResource(R.string.settings_app_lock_change_desc),
+                                    onClick = {
+                                        pendingAfterLockVerify = { showLockSetup = true }
+                                        showLockVerify = true
+                                    },
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(20.dp))
+
                         SectionHeader(stringResource(R.string.settings_section_about))
                         SettingCard {
                             InfoRow(
@@ -710,6 +754,39 @@ fun SettingsScreen(
                 .padding(16.dp),
         )
 
+        if (showLockSetup) {
+            AppLockSetupDialog(
+                // Mark the session unlocked on success so enabling the lock
+                // doesn't immediately challenge the user who just set it up.
+                onSetPin = { pin ->
+                    scope.launch { container.settings.setAppLockSecret(AppLockMethod.PIN, pin); container.appLock.unlock() }
+                },
+                onSetPassword = { pw ->
+                    scope.launch { container.settings.setAppLockSecret(AppLockMethod.PASSWORD, pw); container.appLock.unlock() }
+                },
+                onSetBiometric = {
+                    scope.launch { container.settings.setAppLockBiometric(); container.appLock.unlock() }
+                },
+                onDismiss = { showLockSetup = false },
+            )
+        }
+        val verifyState = lockState
+        if (showLockVerify && verifyState != null) {
+            AppLockVerifyDialog(
+                method = verifyState.method,
+                onVerifySecret = { verifyState.verify(it) },
+                onVerified = {
+                    showLockVerify = false
+                    val pending = pendingAfterLockVerify
+                    pendingAfterLockVerify = null
+                    pending?.invoke()
+                },
+                onDismiss = {
+                    showLockVerify = false
+                    pendingAfterLockVerify = null
+                },
+            )
+        }
         if (showLegalSheet) {
             LegalDisclaimerSheet(
                 requireAck = false,

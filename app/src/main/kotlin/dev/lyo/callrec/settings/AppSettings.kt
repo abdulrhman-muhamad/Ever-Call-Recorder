@@ -12,6 +12,7 @@ import com.coolappstore.evercallrecorder.by.svhp.core.CryptoBox
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import com.coolappstore.evercallrecorder.by.svhp.storage.RecordingFileNameFormatter
+import com.coolappstore.evercallrecorder.by.svhp.security.AppLockCrypto
 
 enum class RecordingFormat { WAV, AAC }
 
@@ -36,6 +37,27 @@ enum class AutoRecordScope { ALL, CONTACTS, NON_CONTACTS, UNKNOWN }
  * (`ended_at` still NULL) sorts as zero-length rather than being dropped.
  */
 enum class RecordingSort { NEWEST, OLDEST, LONGEST, SHORTEST }
+
+/** How the app lock challenges the user. NONE = lock disabled. */
+enum class AppLockMethod { NONE, PIN, PASSWORD, BIOMETRIC }
+
+/**
+ * Snapshot of the app-lock configuration. [verify] is synchronous on purpose:
+ * the lock screen and the settings verify dialog call it from plain lambdas,
+ * so the (tiny) hash+salt are read once into this object rather than hitting
+ * DataStore per keystroke. Biometric has no secret — [verify] is always false
+ * for it; the BiometricPrompt result is the verification.
+ */
+data class AppLockState(
+    val enabled: Boolean,
+    val method: AppLockMethod,
+    private val hash: String?,
+    private val salt: String?,
+) {
+    fun verify(secret: String): Boolean =
+        (method == AppLockMethod.PIN || method == AppLockMethod.PASSWORD) &&
+            hash != null && salt != null && AppLockCrypto.verify(secret, salt, hash)
+}
 
 class AppSettings(private val store: DataStore<Preferences>) {
 
@@ -85,6 +107,39 @@ class AppSettings(private val store: DataStore<Preferences>) {
             ?: RecordingFileNameFormatter.DEFAULT_TEMPLATE
     }
     suspend fun setExportNameTemplate(v: String) = store.edit { it[Keys.EXPORT_NAME_TEMPLATE] = v }
+
+    // App lock. The secret is never stored — only a salted SHA-256 (see
+    // AppLockCrypto). Method is validated on read so a downgrade can't leave
+    // the gate stuck on an unknown constant: unknown → NONE → lock disabled.
+    val appLockState: Flow<AppLockState> = store.data.map {
+        val method = runCatching { AppLockMethod.valueOf(it[Keys.APP_LOCK_METHOD] ?: AppLockMethod.NONE.name) }
+            .getOrDefault(AppLockMethod.NONE)
+        val enabled = (it[Keys.APP_LOCK_ENABLED] ?: false) && method != AppLockMethod.NONE
+        AppLockState(enabled, method, it[Keys.APP_LOCK_HASH], it[Keys.APP_LOCK_SALT])
+    }
+    suspend fun setAppLockSecret(method: AppLockMethod, secret: String) {
+        require(method == AppLockMethod.PIN || method == AppLockMethod.PASSWORD)
+        val salt = AppLockCrypto.generateSalt()
+        val hash = AppLockCrypto.hash(secret, salt)
+        store.edit {
+            it[Keys.APP_LOCK_SALT] = salt
+            it[Keys.APP_LOCK_HASH] = hash
+            it[Keys.APP_LOCK_METHOD] = method.name
+            it[Keys.APP_LOCK_ENABLED] = true
+        }
+    }
+    suspend fun setAppLockBiometric() = store.edit {
+        it.remove(Keys.APP_LOCK_SALT)
+        it.remove(Keys.APP_LOCK_HASH)
+        it[Keys.APP_LOCK_METHOD] = AppLockMethod.BIOMETRIC.name
+        it[Keys.APP_LOCK_ENABLED] = true
+    }
+    suspend fun clearAppLock() = store.edit {
+        it[Keys.APP_LOCK_ENABLED] = false
+        it[Keys.APP_LOCK_METHOD] = AppLockMethod.NONE.name
+        it.remove(Keys.APP_LOCK_SALT)
+        it.remove(Keys.APP_LOCK_HASH)
+    }
 
     val recordingMode: Flow<RecordingMode> = store.data.map {
         runCatching { RecordingMode.valueOf(it[Keys.RECORDING_MODE] ?: RecordingMode.SHIZUKU.name) }
@@ -192,6 +247,10 @@ class AppSettings(private val store: DataStore<Preferences>) {
         val CLEANUP_MAX_SIZE_GB = intPreferencesKey("auto_cleanup_max_size_gb")
         val SORT_ORDER = stringPreferencesKey("library_sort_order")
         val EXPORT_NAME_TEMPLATE = stringPreferencesKey("export_name_template")
+        val APP_LOCK_ENABLED = booleanPreferencesKey("app_lock_enabled")
+        val APP_LOCK_METHOD = stringPreferencesKey("app_lock_method")
+        val APP_LOCK_HASH = stringPreferencesKey("app_lock_secret_hash")
+        val APP_LOCK_SALT = stringPreferencesKey("app_lock_salt")
         val CUSTOM_RECORDING_PATH = stringPreferencesKey("custom_recording_path")
         val AUTO_RECORD_SCOPE = stringPreferencesKey("auto_record_scope")
         val AUTO_RECORD_SIM_ID = stringPreferencesKey("auto_record_sim_id")

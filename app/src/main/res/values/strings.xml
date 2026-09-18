@@ -118,6 +118,14 @@
     <string name="settings_calibration_unknown">Not yet calibrated — will run on the first call</string>
     <string name="settings_calibration_reset">Recalibrate</string>
     <string name="settings_calibration_reset_desc">Clear cache — the app will try all methods again on the next call.</string>
+    <string name="settings_section_security">Security</string>
+    <string name="settings_app_lock_title">App lock</string>
+    <string name="settings_app_lock_desc">Ask for a PIN, password or biometrics when the app opens.</string>
+    <string name="settings_app_lock_on">Protected with %1$s</string>
+    <string name="settings_app_lock_change">Change lock method</string>
+    <string name="settings_app_lock_change_desc">Verify first, then choose a new PIN, password or biometrics</string>
+    <string name="lock_setup_intro">Choose how you\'d like to confirm it\'s really you before %1$s opens.</string>
+    <string name="lock_unlock_title">Unlock %1$s</string>
     <string name="settings_section_about">About</string>
     <string name="settings_version">Version</string>
     <string name="settings_storage_path">Recordings folder</string>

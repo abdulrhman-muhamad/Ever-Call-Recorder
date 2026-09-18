@@ -119,6 +119,7 @@ dependencies {
     // AndroidX core
     implementation(libs.androidx.core)
     implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.biometric)
     implementation(libs.androidx.splashscreen)
     implementation(libs.androidx.media)
     implementation(libs.bundles.lifecycle)

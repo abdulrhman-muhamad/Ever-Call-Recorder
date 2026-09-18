@@ -4,6 +4,7 @@ package com.coolappstore.evercallrecorder.by.svhp.di
 import android.content.Context
 import androidx.datastore.preferences.preferencesDataStore
 import com.coolappstore.evercallrecorder.by.svhp.playback.MediaSessionHolder
+import com.coolappstore.evercallrecorder.by.svhp.ui.lock.AppLockGate
 import com.coolappstore.evercallrecorder.by.svhp.recorder.AccessibilityRecorder
 import com.coolappstore.evercallrecorder.by.svhp.recorder.CapabilitiesStore
 import com.coolappstore.evercallrecorder.by.svhp.recorder.RecorderController
@@ -92,4 +93,7 @@ class AppContainer(private val ctx: Context) {
     }
 
     val mediaSession: MediaSessionHolder by lazy { MediaSessionHolder(ctx.applicationContext) }
+
+    /** Session unlock flag for the app lock — see [AppLockGate]. */
+    val appLock: AppLockGate by lazy { AppLockGate() }
 }
