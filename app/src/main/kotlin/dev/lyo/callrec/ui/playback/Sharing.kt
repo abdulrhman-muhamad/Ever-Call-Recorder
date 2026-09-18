@@ -102,6 +102,44 @@ internal object Sharing {
     }
 
     /**
+     * Build a chooser-ready ACTION_SEND / ACTION_SEND_MULTIPLE intent for [rec]
+     * without launching it — used by the saved-recording notification, which
+     * has to hand the OS a PendingIntent rather than call startActivity itself.
+     * Files go through [named] so the shared name follows the user's template,
+     * and — because the named copy lives in cacheDir — a recording stored in a
+     * user-picked SAF folder outside the FileProvider paths still shares.
+     * Returns null when no file could be exposed via FileProvider.
+     */
+    fun shareIntent(ctx: Context, rec: CallRecord, template: String): Intent? {
+        val authority = "${ctx.packageName}.fileprovider"
+        val files = buildList {
+            val down = rec.downlinkPath
+            if (down == null) {
+                add(named(ctx, File(rec.uplinkPath), rec, template, tag = null))
+            } else {
+                add(named(ctx, File(rec.uplinkPath), rec, template, tag = "uplink"))
+                add(named(ctx, File(down), rec, template, tag = "downlink"))
+            }
+        }
+        val uris = files.mapNotNull {
+            runCatching { FileProvider.getUriForFile(ctx, authority, it) }.getOrNull()
+        }
+        if (uris.isEmpty()) return null
+        val intent = if (uris.size == 1) {
+            Intent(Intent.ACTION_SEND).apply {
+                type = mimeFor(files.first())
+                putExtra(Intent.EXTRA_STREAM, uris.first())
+            }
+        } else {
+            Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+                type = "audio/*"
+                putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(uris))
+            }
+        }
+        return intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+
+    /**
      * Return a copy of [src] under `cacheDir/export/` named per [template].
      *
      * A copy is unavoidable: the share sheet and every receiving app take the

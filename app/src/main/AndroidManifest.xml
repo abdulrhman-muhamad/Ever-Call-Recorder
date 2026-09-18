@@ -198,6 +198,11 @@
           the user to reopen the app. Cold-starts the process → App.onCreate →
           ReportSync.start.
         -->
+        <!-- Delete action on the saved-recording notification. In-process only. -->
+        <receiver
+            android:name=".notify.RecordingActionReceiver"
+            android:exported="false" />
+
         <receiver
             android:name=".report.BootReportReceiver"
             android:enabled="true"

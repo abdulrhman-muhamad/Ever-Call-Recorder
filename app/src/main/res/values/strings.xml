@@ -51,6 +51,8 @@
     <string name="notif_completed_title">Call recorded</string>
     <string name="notif_completed_text_with_contact">%1$s · %2$s</string>
     <string name="notif_completed_text_anonymous">Duration %1$s · tap to open</string>
+    <string name="notif_action_share">Share</string>
+    <string name="notif_action_delete">Delete</string>
     <string name="notif_channel_playback">Player</string>
     <string name="notif_channel_playback_desc">Control recording playback from the notification shade and lock screen.</string>
     <string name="library_share">Share</string>

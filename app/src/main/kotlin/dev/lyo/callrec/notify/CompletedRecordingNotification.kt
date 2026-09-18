@@ -12,6 +12,10 @@ import com.coolappstore.evercallrecorder.by.svhp.R
 import com.coolappstore.evercallrecorder.by.svhp.core.L
 import com.coolappstore.evercallrecorder.by.svhp.storage.CallRecord
 import com.coolappstore.evercallrecorder.by.svhp.ui.MainActivity
+import com.coolappstore.evercallrecorder.by.svhp.di.RecorderGraph
+import com.coolappstore.evercallrecorder.by.svhp.storage.RecordingFileNameFormatter
+import com.coolappstore.evercallrecorder.by.svhp.ui.playback.Sharing
+import kotlinx.coroutines.flow.first
 
 /**
  * Toast-like dismissible notification posted right after a recording is
@@ -25,7 +29,11 @@ import com.coolappstore.evercallrecorder.by.svhp.ui.MainActivity
  */
 object CompletedRecordingNotification {
 
-    fun show(ctx: Context, rec: CallRecord) {
+    /**
+     * Suspends only to read the export-name template for the Share action;
+     * both callers already run on the recorder's appScope after finalisation.
+     */
+    suspend fun show(ctx: Context, rec: CallRecord) {
         val nm = ctx.getSystemService<NotificationManager>() ?: run {
             L.w(TAG, "show: no NotificationManager"); return
         }
@@ -51,6 +59,37 @@ object CompletedRecordingNotification {
 
         val title = ctx.getString(R.string.notif_completed_title)
         val subtitle = buildSubtitle(ctx, rec)
+        // Stable ID per callId so a re-recorded call (same id, rare) replaces
+        // the previous notification rather than stacking.
+        val notifId = notificationIdFor(rec.callId)
+        val piFlags = PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+
+        // Share: hand the OS a chooser directly. A receiver can't start an
+        // activity from the background on Android 10+, but a notification
+        // action's own PendingIntent can. Files are exposed through the
+        // template-named cache copy, so the share sheet shows the readable
+        // name and works even for recordings in a user-picked SAF folder.
+        val template = runCatching { RecorderGraph.container.settings.exportNameTemplate.first() }
+            .getOrDefault(RecordingFileNameFormatter.DEFAULT_TEMPLATE)
+        val shareIntent = runCatching { Sharing.shareIntent(ctx, rec, template) }
+            .onFailure { L.w(TAG, "share intent failed: ${it.message}") }
+            .getOrNull()
+        val share = shareIntent?.let {
+            PendingIntent.getActivity(
+                ctx,
+                notifId + 1,
+                Intent.createChooser(it, null).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                piFlags,
+            )
+        }
+        val delete = PendingIntent.getBroadcast(
+            ctx,
+            notifId + 2,
+            Intent(ctx, RecordingActionReceiver::class.java)
+                .setAction(RecordingActionReceiver.ACTION_DELETE)
+                .putExtra(RecordingActionReceiver.EXTRA_CALL_ID, rec.callId),
+            piFlags,
+        )
 
         val notif = NotificationCompat.Builder(ctx, NotificationChannels.ID_COMPLETED)
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
@@ -71,11 +110,12 @@ object CompletedRecordingNotification {
             .setAutoCancel(true)
             .setOnlyAlertOnce(true)
             .setContentIntent(tap)
+            .apply {
+                if (share != null) addAction(0, ctx.getString(R.string.notif_action_share), share)
+                addAction(0, ctx.getString(R.string.notif_action_delete), delete)
+            }
             .build()
 
-        // Stable ID per callId so a re-recorded call (same id, rare) replaces
-        // the previous notification rather than stacking.
-        val notifId = notificationIdFor(rec.callId)
         nm.notify(notifId, notif)
         L.i(TAG, "show: posted callId=${rec.callId} notifId=$notifId")
     }
@@ -99,7 +139,7 @@ object CompletedRecordingNotification {
         return if (m == 0L) "${s} s" else "%d:%02d".format(m, s)
     }
 
-    private fun notificationIdFor(callId: String): Int =
+    internal fun notificationIdFor(callId: String): Int =
         // Avoid collision with the foreground notification ID (0xC411) by
         // restricting hash range and offsetting.
         (callId.hashCode() and 0x7FFF) or 0x10000
