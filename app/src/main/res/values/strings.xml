@@ -123,6 +123,8 @@
     <string name="settings_theme_system">System</string>
     <string name="settings_theme_light">Light</string>
     <string name="settings_theme_dark">Dark</string>
+    <string name="settings_scroll_haptics">Scroll haptics</string>
+    <string name="settings_scroll_haptics_desc">Tick gently while scrolling the recordings list.</string>
     <string name="settings_section_detection">Call detection</string>
     <string name="settings_call_detection_title">Call detection method</string>
     <string name="settings_call_detection_desc">How the app learns that a call is in progress.</string>

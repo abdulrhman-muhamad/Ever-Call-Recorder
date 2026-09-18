@@ -146,6 +146,7 @@ fun SettingsScreen(
     val lockState by container.settings.appLockState.collectAsState(initial = null)
     val detectionMode by container.settings.callDetectionMode.collectAsState(initial = CallDetectionMode.PHONE_STATE)
     val themeMode by container.settings.themeMode.collectAsState(initial = ThemeMode.SYSTEM)
+    val scrollHaptics by container.settings.scrollHaptics.collectAsState(initial = false)
     var detectionPermGranted by remember { mutableStateOf(CallDetectionPermission.isGranted(ctx)) }
     val shizukuUnavailableMsg = stringResource(R.string.settings_call_detection_shizuku_unavailable)
     var showLockSetup by remember { mutableStateOf(false) }
@@ -792,6 +793,13 @@ fun SettingsScreen(
                                     }
                                 }
                             }
+                            Divider()
+                            ToggleRow(
+                                title = stringResource(R.string.settings_scroll_haptics),
+                                desc = stringResource(R.string.settings_scroll_haptics_desc),
+                                checked = scrollHaptics,
+                                onCheckedChange = { scope.launch { container.settings.setScrollHaptics(it) } },
+                            )
                         }
                         Spacer(Modifier.height(20.dp))
 

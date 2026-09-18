@@ -108,6 +108,8 @@ import com.coolappstore.evercallrecorder.by.svhp.R
 import com.coolappstore.evercallrecorder.by.svhp.contacts.ContactResolver
 import com.coolappstore.evercallrecorder.by.svhp.di.AppContainer
 import com.coolappstore.evercallrecorder.by.svhp.settings.RecordingSort
+import com.coolappstore.evercallrecorder.by.svhp.ui.components.ScrollHapticsEffect
+import androidx.compose.foundation.lazy.rememberLazyListState
 import com.coolappstore.evercallrecorder.by.svhp.recorder.RecorderController
 import com.coolappstore.evercallrecorder.by.svhp.recorder.DaemonHealth
 import com.coolappstore.evercallrecorder.by.svhp.recorder.Strategy
@@ -161,6 +163,7 @@ fun PrimaryScreen(
     var query by remember { mutableStateOf("") }
     var filter by remember { mutableStateOf(PrimaryFilter.All) }
     val sort by container.settings.sortOrder.collectAsState(initial = RecordingSort.NEWEST)
+    val scrollHaptics by container.settings.scrollHaptics.collectAsState(initial = false)
 
     val searchFlow = remember {
         snapshotFlow { query }
@@ -300,6 +303,7 @@ fun PrimaryScreen(
                     filteredItems.isEmpty() -> EmptyFilter()
                     else -> RecordsList(
                         ctx = ctx,
+                        scrollHaptics = scrollHaptics,
                         items = filteredItems,
                         selected = selected,
                         avatarCache = avatarCache,
@@ -793,6 +797,7 @@ private fun RecordingSort.labelRes(): Int = when (this) {
 @Composable
 private fun RecordsList(
     ctx: Context,
+    scrollHaptics: Boolean = false,
     items: List<CallRecord>,
     selected: Map<String, Unit>,
     avatarCache: androidx.compose.runtime.snapshots.SnapshotStateMap<String, String?>,
@@ -802,8 +807,11 @@ private fun RecordsList(
     onSwipeDelete: (CallRecord) -> Unit,
 ) {
     val grouped = remember(items) { groupByBucket(ctx, items) }
+    val listState = rememberLazyListState()
+    ScrollHapticsEffect(listState = listState, enabled = scrollHaptics)
 
     LazyColumn(
+        state = listState,
         contentPadding = PaddingValues(
             start = 16.dp,
             end = 16.dp,

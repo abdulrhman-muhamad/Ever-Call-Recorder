@@ -130,6 +130,9 @@ class AppSettings(private val store: DataStore<Preferences>) {
     }
     suspend fun setThemeMode(v: ThemeMode) = store.edit { it[Keys.THEME_MODE] = v.name }
 
+    val scrollHaptics: Flow<Boolean> = store.data.map { it[Keys.SCROLL_HAPTICS] ?: false }
+    suspend fun setScrollHaptics(v: Boolean) = store.edit { it[Keys.SCROLL_HAPTICS] = v }
+
     // App lock. The secret is never stored — only a salted SHA-256 (see
     // AppLockCrypto). Method is validated on read so a downgrade can't leave
     // the gate stuck on an unknown constant: unknown → NONE → lock disabled.
@@ -271,6 +274,7 @@ class AppSettings(private val store: DataStore<Preferences>) {
         val EXPORT_NAME_TEMPLATE = stringPreferencesKey("export_name_template")
         val CALL_DETECTION_MODE = stringPreferencesKey("call_detection_mode")
         val THEME_MODE = stringPreferencesKey("theme_mode")
+        val SCROLL_HAPTICS = booleanPreferencesKey("scroll_haptics")
         val APP_LOCK_ENABLED = booleanPreferencesKey("app_lock_enabled")
         val APP_LOCK_METHOD = stringPreferencesKey("app_lock_method")
         val APP_LOCK_HASH = stringPreferencesKey("app_lock_secret_hash")
