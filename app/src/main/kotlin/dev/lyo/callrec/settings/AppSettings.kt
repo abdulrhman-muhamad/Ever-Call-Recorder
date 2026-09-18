@@ -11,6 +11,7 @@ import androidx.datastore.preferences.core.stringSetPreferencesKey
 import com.coolappstore.evercallrecorder.by.svhp.core.CryptoBox
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import com.coolappstore.evercallrecorder.by.svhp.storage.RecordingFileNameFormatter
 
 enum class RecordingFormat { WAV, AAC }
 
@@ -75,6 +76,15 @@ class AppSettings(private val store: DataStore<Preferences>) {
             .getOrDefault(RecordingSort.NEWEST)
     }
     suspend fun setSortOrder(v: RecordingSort) = store.edit { it[Keys.SORT_ORDER] = v.name }
+
+    // Name given to recordings on the way OUT (share sheet, zip export) — the
+    // on-disk name stays `<ts>__<callId>__<tag>` because it is minted at call
+    // start, before the contact is resolved. See RecordingFileNameFormatter.
+    val exportNameTemplate: Flow<String> = store.data.map {
+        it[Keys.EXPORT_NAME_TEMPLATE]?.takeIf { t -> t.isNotBlank() }
+            ?: RecordingFileNameFormatter.DEFAULT_TEMPLATE
+    }
+    suspend fun setExportNameTemplate(v: String) = store.edit { it[Keys.EXPORT_NAME_TEMPLATE] = v }
 
     val recordingMode: Flow<RecordingMode> = store.data.map {
         runCatching { RecordingMode.valueOf(it[Keys.RECORDING_MODE] ?: RecordingMode.SHIZUKU.name) }
@@ -181,6 +191,7 @@ class AppSettings(private val store: DataStore<Preferences>) {
         val CLEANUP_MAX_AGE_DAYS = intPreferencesKey("auto_cleanup_max_age_days")
         val CLEANUP_MAX_SIZE_GB = intPreferencesKey("auto_cleanup_max_size_gb")
         val SORT_ORDER = stringPreferencesKey("library_sort_order")
+        val EXPORT_NAME_TEMPLATE = stringPreferencesKey("export_name_template")
         val CUSTOM_RECORDING_PATH = stringPreferencesKey("custom_recording_path")
         val AUTO_RECORD_SCOPE = stringPreferencesKey("auto_record_scope")
         val AUTO_RECORD_SIM_ID = stringPreferencesKey("auto_record_sim_id")

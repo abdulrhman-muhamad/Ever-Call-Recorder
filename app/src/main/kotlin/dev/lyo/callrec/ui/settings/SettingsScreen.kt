@@ -75,6 +75,8 @@ import androidx.compose.ui.window.Dialog
 import com.coolappstore.evercallrecorder.by.svhp.BuildConfig
 import com.coolappstore.evercallrecorder.by.svhp.R
 import com.coolappstore.evercallrecorder.by.svhp.di.AppContainer
+import com.coolappstore.evercallrecorder.by.svhp.storage.RecordingFileNameFormatter
+import com.coolappstore.evercallrecorder.by.svhp.storage.CallRecord
 import com.coolappstore.evercallrecorder.by.svhp.recorder.Capabilities
 import com.coolappstore.evercallrecorder.by.svhp.report.CallReporter
 import com.coolappstore.evercallrecorder.by.svhp.settings.AutoRecordScope
@@ -132,6 +134,8 @@ fun SettingsScreen(
     val excludeNumbers by container.settings.excludeNumbers.collectAsState(initial = emptySet())
     val reportingEnabled by container.settings.reportingEnabled.collectAsState(initial = true)
     val reportUrl by container.settings.reportUrl.collectAsState(initial = "")
+    val nameTemplate by container.settings.exportNameTemplate
+        .collectAsState(initial = RecordingFileNameFormatter.DEFAULT_TEMPLATE)
     val reportSecret by container.settings.reportSecret.collectAsState(initial = "")
     val reportUpload by container.settings.reportUploadRecording.collectAsState(initial = true)
     val reportScope by container.settings.reportScope.collectAsState(initial = AutoRecordScope.ALL)
@@ -596,6 +600,46 @@ fun SettingsScreen(
                 // ── Auto-cleanup ────────────────────────────────────────────
                 Staggered(320) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        SectionHeader(stringResource(R.string.settings_section_export))
+                        SettingCard {
+                            Column(modifier = Modifier.padding(20.dp)) {
+                                OutlinedTextField(
+                                    value = nameTemplate,
+                                    onValueChange = {
+                                        scope.launch { container.settings.setExportNameTemplate(it) }
+                                    },
+                                    label = { Text(stringResource(R.string.settings_export_name_label)) },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                                Spacer(Modifier.height(8.dp))
+                                Text(
+                                    text = stringResource(R.string.settings_export_name_desc),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    text = RecordingFileNameFormatter.PLACEHOLDERS.joinToString("  "),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                Spacer(Modifier.height(8.dp))
+                                // Live preview against a fixed sample row, so a typo or
+                                // an over-aggressive sanitise is visible before the user
+                                // discovers it in a share sheet.
+                                Text(
+                                    text = stringResource(
+                                        R.string.settings_export_name_preview,
+                                        RecordingFileNameFormatter.format(nameTemplate, PREVIEW_RECORD),
+                                    ),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(20.dp))
+
                         SectionHeader(stringResource(R.string.settings_section_cleanup))
                         SettingCard {
                             CleanupChooserRow(
@@ -781,6 +825,22 @@ private fun NumberListEditor(
         )
     }
 }
+
+/**
+ * Fixed sample used only to render the file-name preview. Hard-coded rather
+ * than pulled from the DB so the preview reads the same on a fresh install
+ * with no recordings yet.
+ */
+private val PREVIEW_RECORD = CallRecord(
+    callId = "K3F7Q",
+    startedAt = 1_767_225_600_000L, // 2026-01-01 00:00 UTC — stable, not "now"
+    endedAt = 1_767_225_720_000L,
+    contactNumber = "+15550100",
+    contactName = "Alex Rivera",
+    mode = "dual",
+    uplinkPath = "",
+    downlinkPath = null,
+)
 
 @Composable
 private fun SectionHeader(text: String) {

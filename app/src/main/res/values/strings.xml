@@ -139,6 +139,10 @@
     <string name="legal_action_accept">Understood, continue</string>
     <string name="legal_action_close">Close</string>
     <string name="settings_calibration_done">Reset. The next call will run a new calibration.</string>
+    <string name="settings_section_export">Sharing &amp; export</string>
+    <string name="settings_export_name_label">Shared file name</string>
+    <string name="settings_export_name_desc">Name given to recordings when you share or export them. The name stored on the device is not changed.</string>
+    <string name="settings_export_name_preview">Preview: %1$s</string>
     <string name="settings_section_cleanup">Auto-cleanup</string>
     <string name="settings_cleanup_age_title">Keep by age</string>
     <string name="settings_cleanup_age_desc">Delete recordings older than the selected period. Favorites are not deleted.</string>

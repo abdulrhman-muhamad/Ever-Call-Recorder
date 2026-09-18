@@ -9,6 +9,7 @@ import com.coolappstore.evercallrecorder.by.svhp.storage.CallRecord
 import java.io.File
 import java.util.Locale
 import com.coolappstore.evercallrecorder.by.svhp.codec.AudioMixer
+import com.coolappstore.evercallrecorder.by.svhp.storage.RecordingFileNameFormatter
 
 /**
  * Centralised share helpers for the playback screen. Three flavours:
@@ -25,9 +26,9 @@ import com.coolappstore.evercallrecorder.by.svhp.codec.AudioMixer
  */
 internal object Sharing {
 
-    fun shareSingle(ctx: Context, rec: CallRecord) {
+    fun shareSingle(ctx: Context, rec: CallRecord, template: String) {
         val authority = "${ctx.packageName}.fileprovider"
-        val file = File(rec.uplinkPath)
+        val file = named(ctx, File(rec.uplinkPath), rec, template, tag = null)
         val uri = runCatching { FileProvider.getUriForFile(ctx, authority, file) }.getOrNull()
             ?: return
         val intent = Intent(Intent.ACTION_SEND).apply {
@@ -38,11 +39,15 @@ internal object Sharing {
         runCatching { ctx.startActivity(Intent.createChooser(intent, null)) }
     }
 
-    fun shareSeparate(ctx: Context, rec: CallRecord) {
+    fun shareSeparate(ctx: Context, rec: CallRecord, template: String) {
         val authority = "${ctx.packageName}.fileprovider"
         val files = buildList {
-            add(File(rec.uplinkPath))
-            rec.downlinkPath?.let { add(File(it)) }
+            // Tag the halves so the two files stay distinguishable even when
+            // the template itself omits {tag}.
+            add(named(ctx, File(rec.uplinkPath), rec, template, tag = "uplink"))
+            rec.downlinkPath?.let {
+                add(named(ctx, File(it), rec, template, tag = "downlink"))
+            }
         }
         val uris = files.mapNotNull {
             runCatching { FileProvider.getUriForFile(ctx, authority, it) }.getOrNull()
@@ -69,8 +74,8 @@ internal object Sharing {
      *
      * Heavy: must be called from a worker dispatcher.
      */
-    fun shareStereoMix(ctx: Context, rec: CallRecord): Boolean {
-        val mix = buildOrReuseStereoMix(ctx, rec) ?: return false
+    fun shareStereoMix(ctx: Context, rec: CallRecord, template: String): Boolean {
+        val mix = named(ctx, buildOrReuseStereoMix(ctx, rec) ?: return false, rec, template, tag = "stereo")
         val authority = "${ctx.packageName}.fileprovider"
         val uri = runCatching { FileProvider.getUriForFile(ctx, authority, mix) }.getOrNull()
             ?: return false
@@ -94,6 +99,39 @@ internal object Sharing {
         }
         out.parentFile?.mkdirs()
         return AudioMixer.mixToStereoWav(uplink, downlink, out)
+    }
+
+    /**
+     * Return a copy of [src] under `cacheDir/export/` named per [template].
+     *
+     * A copy is unavoidable: the share sheet and every receiving app take the
+     * display name from the file itself, so the only way to hand over a
+     * readable name is to hand over a differently-named file. The copy is
+     * skipped when a valid one already exists (mtime >= source), and lands in
+     * cacheDir so the OS can reclaim it under storage pressure.
+     *
+     * On any failure — no space, unwritable cache — we fall back to sharing
+     * the original file. A worse name beats a failed share.
+     */
+    private fun named(
+        ctx: Context,
+        src: File,
+        rec: CallRecord,
+        template: String,
+        tag: String?,
+    ): File = runCatching {
+        val ext = src.extension
+        val base = RecordingFileNameFormatter.format(template, rec, tag)
+        val out = File(ctx.cacheDir, "export/$base${if (ext.isBlank()) "" else ".$ext"}")
+        if (out.path == src.path) return src
+        if (out.exists() && out.lastModified() >= src.lastModified()) return out
+        out.parentFile?.mkdirs()
+        src.copyTo(out, overwrite = true)
+        L.i(TAG, "export copy → ${out.name}")
+        out
+    }.getOrElse {
+        L.w(TAG, "export rename failed, sharing original: ${it.message}")
+        src
     }
 
     private fun mimeFor(f: File): String = when (f.extension.lowercase(Locale.US)) {

@@ -88,6 +88,7 @@ import androidx.compose.ui.unit.dp
 import com.coolappstore.evercallrecorder.by.svhp.R
 import com.coolappstore.evercallrecorder.by.svhp.codec.Waveform
 import com.coolappstore.evercallrecorder.by.svhp.core.L
+import com.coolappstore.evercallrecorder.by.svhp.storage.RecordingFileNameFormatter
 import com.coolappstore.evercallrecorder.by.svhp.di.AppContainer
 import com.coolappstore.evercallrecorder.by.svhp.storage.CallRecord
 import kotlinx.coroutines.Dispatchers
@@ -328,6 +329,8 @@ fun PlaybackScreen(
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var showShareSheet by remember { mutableStateOf(false) }
     var sharingMix by remember { mutableStateOf(false) }
+    val nameTemplate by container.settings.exportNameTemplate
+        .collectAsState(initial = RecordingFileNameFormatter.DEFAULT_TEMPLATE)
 
     if (showShareSheet) {
         ShareChoiceDialog(
@@ -337,7 +340,7 @@ fun PlaybackScreen(
                 sharingMix = true
                 scope.launch {
                     val ok = withContext(Dispatchers.Default) {
-                        Sharing.shareStereoMix(ctx, r)
+                        Sharing.shareStereoMix(ctx, r, nameTemplate)
                     }
                     sharingMix = false
                     showShareSheet = false
@@ -347,7 +350,7 @@ fun PlaybackScreen(
             onSeparate = {
                 val r = rec ?: return@ShareChoiceDialog
                 showShareSheet = false
-                Sharing.shareSeparate(ctx, r)
+                Sharing.shareSeparate(ctx, r, nameTemplate)
             },
             onDismiss = { if (!sharingMix) showShareSheet = false },
         )
@@ -407,7 +410,7 @@ fun PlaybackScreen(
                 onShare = onShareClicked@{
                     val r = rec ?: return@onShareClicked
                     if (isDual) showShareSheet = true
-                    else Sharing.shareSingle(ctx, r)
+                    else Sharing.shareSingle(ctx, r, nameTemplate)
                 },
                 onDelete = { showDeleteConfirm = true },
             )
