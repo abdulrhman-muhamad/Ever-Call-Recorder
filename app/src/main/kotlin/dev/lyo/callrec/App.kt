@@ -9,6 +9,7 @@ import androidx.lifecycle.ProcessLifecycleOwner
 import com.coolappstore.evercallrecorder.by.svhp.cleanup.CleanupJob
 import com.coolappstore.evercallrecorder.by.svhp.di.AppContainer
 import com.coolappstore.evercallrecorder.by.svhp.di.RecorderGraph
+import com.coolappstore.evercallrecorder.by.svhp.telephony.CallDetectionComponents
 import com.coolappstore.evercallrecorder.by.svhp.notify.DaemonHealthNotification
 import com.coolappstore.evercallrecorder.by.svhp.notify.NotificationChannels
 import com.coolappstore.evercallrecorder.by.svhp.report.ReportSync
@@ -52,6 +53,12 @@ class App : Application() {
         // synchronous so the rest of the cold-launch path sees Shizuku
         // already wired.
         container.shizuku.attach()
+        // Keep the PHONE_STATE receiver / Telecom InCallService enabled in
+        // lockstep with the chosen detection mode — reacts to changes from
+        // Settings and re-applies on every launch.
+        container.settings.callDetectionMode
+            .onEach { CallDetectionComponents.sync(this, it) }
+            .launchIn(container.appScope)
         container.appScope.launch {
             runCatching {
                 container.shizuku.refresh()
