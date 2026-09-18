@@ -25,6 +25,17 @@ enum class RecordingMode { SHIZUKU, ACCESSIBILITY }
  */
 enum class AutoRecordScope { ALL, CONTACTS, NON_CONTACTS, UNKNOWN }
 
+/**
+ * Ordering of the recordings library. [CallDao.observeSearch] always returns
+ * newest-first, so every other ordering is applied in memory by the screen —
+ * the list is bounded by the cleanup policy, and one query keeps serving all
+ * four orderings without a second DAO method per sort.
+ *
+ * Duration sorts derive length from `ended_at - started_at`; an in-flight row
+ * (`ended_at` still NULL) sorts as zero-length rather than being dropped.
+ */
+enum class RecordingSort { NEWEST, OLDEST, LONGEST, SHORTEST }
+
 class AppSettings(private val store: DataStore<Preferences>) {
 
     val sampleRate: Flow<Int> = store.data.map { it[Keys.SAMPLE_RATE] ?: 16_000 }
@@ -55,6 +66,15 @@ class AppSettings(private val store: DataStore<Preferences>) {
             .getOrDefault(RecordingFormat.AAC)
     }
     suspend fun setFormat(v: RecordingFormat) = store.edit { it[Keys.FORMAT] = v.name }
+
+    // Library sort order. Unparseable values (a downgrade that wrote an enum
+    // constant this build doesn't know) fall back to NEWEST rather than
+    // throwing — same defensive read as `format` above.
+    val sortOrder: Flow<RecordingSort> = store.data.map {
+        runCatching { RecordingSort.valueOf(it[Keys.SORT_ORDER] ?: RecordingSort.NEWEST.name) }
+            .getOrDefault(RecordingSort.NEWEST)
+    }
+    suspend fun setSortOrder(v: RecordingSort) = store.edit { it[Keys.SORT_ORDER] = v.name }
 
     val recordingMode: Flow<RecordingMode> = store.data.map {
         runCatching { RecordingMode.valueOf(it[Keys.RECORDING_MODE] ?: RecordingMode.SHIZUKU.name) }
@@ -160,6 +180,7 @@ class AppSettings(private val store: DataStore<Preferences>) {
         val RECORDING_MODE = stringPreferencesKey("recording_mode")
         val CLEANUP_MAX_AGE_DAYS = intPreferencesKey("auto_cleanup_max_age_days")
         val CLEANUP_MAX_SIZE_GB = intPreferencesKey("auto_cleanup_max_size_gb")
+        val SORT_ORDER = stringPreferencesKey("library_sort_order")
         val CUSTOM_RECORDING_PATH = stringPreferencesKey("custom_recording_path")
         val AUTO_RECORD_SCOPE = stringPreferencesKey("auto_record_scope")
         val AUTO_RECORD_SIM_ID = stringPreferencesKey("auto_record_sim_id")

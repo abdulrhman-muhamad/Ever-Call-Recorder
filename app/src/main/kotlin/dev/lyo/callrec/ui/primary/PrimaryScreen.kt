@@ -39,6 +39,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Checklist
+import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.DoneAll
@@ -49,6 +50,7 @@ import androidx.compose.material.icons.outlined.Phone
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Share
+import androidx.compose.material.icons.outlined.SwapVert
 import androidx.compose.material.icons.outlined.Star
 import androidx.compose.material.icons.outlined.Stop
 import androidx.compose.material3.AlertDialog
@@ -57,6 +59,8 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
@@ -103,6 +107,7 @@ import androidx.core.net.toUri
 import com.coolappstore.evercallrecorder.by.svhp.R
 import com.coolappstore.evercallrecorder.by.svhp.contacts.ContactResolver
 import com.coolappstore.evercallrecorder.by.svhp.di.AppContainer
+import com.coolappstore.evercallrecorder.by.svhp.settings.RecordingSort
 import com.coolappstore.evercallrecorder.by.svhp.recorder.RecorderController
 import com.coolappstore.evercallrecorder.by.svhp.recorder.DaemonHealth
 import com.coolappstore.evercallrecorder.by.svhp.recorder.Strategy
@@ -155,6 +160,7 @@ fun PrimaryScreen(
 
     var query by remember { mutableStateOf("") }
     var filter by remember { mutableStateOf(PrimaryFilter.All) }
+    val sort by container.settings.sortOrder.collectAsState(initial = RecordingSort.NEWEST)
 
     val searchFlow = remember {
         snapshotFlow { query }
@@ -169,7 +175,7 @@ fun PrimaryScreen(
         derivedStateOf {
             val skip = pendingDeletion.value?.callId
             val base = if (skip == null) items else items.filterNot { it.callId == skip }
-            applyFilter(base, filter)
+            applySort(applyFilter(base, filter), sort)
         }
     }
 
@@ -283,6 +289,8 @@ fun PrimaryScreen(
                         onQueryChange = { query = it },
                         filter = filter,
                         onFilterChange = { filter = it },
+                        sort = sort,
+                        onSortChange = { scope.launch { container.settings.setSortOrder(it) } },
                     )
                 }
 
@@ -641,12 +649,30 @@ private fun applyFilter(items: List<CallRecord>, filter: PrimaryFilter): List<Ca
     }
 }
 
+/**
+ * Re-order [items] in memory. The DAO hands us newest-first already, so
+ * [RecordingSort.NEWEST] is a no-op — everything else pays one sort over a
+ * list the cleanup policy keeps bounded.
+ */
+private fun applySort(items: List<CallRecord>, sort: RecordingSort): List<CallRecord> = when (sort) {
+    RecordingSort.NEWEST -> items
+    RecordingSort.OLDEST -> items.sortedBy { it.startedAt }
+    // A row still recording has `ended_at == null`; treat it as zero-length so
+    // it sinks to the bottom of LONGEST instead of being filtered out.
+    RecordingSort.LONGEST -> items.sortedByDescending { it.durationMs() }
+    RecordingSort.SHORTEST -> items.sortedBy { it.durationMs() }
+}
+
+private fun CallRecord.durationMs(): Long = (endedAt ?: startedAt) - startedAt
+
 @Composable
 private fun SearchAndFilters(
     query: String,
     onQueryChange: (String) -> Unit,
     filter: PrimaryFilter,
     onFilterChange: (PrimaryFilter) -> Unit,
+    sort: RecordingSort,
+    onSortChange: (RecordingSort) -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
         // Filled search field — softer than OutlinedTextField, matches the
@@ -680,9 +706,13 @@ private fun SearchAndFilters(
         // for canonical "filter" pickers. The shape morphs on press and on
         // checked state via ToggleButtonDefaults.shapes(), giving a tactile
         // "I'm now selected" without requiring a visible state colour swap.
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
         ButtonGroup(
             modifier = Modifier
-                .fillMaxWidth()
+                .weight(1f)
                 .horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
@@ -712,8 +742,49 @@ private fun SearchAndFilters(
                 }
             }
         }
+            SortMenuButton(sort = sort, onSortChange = onSortChange)
+        }
         Spacer(Modifier.height(8.dp))
     }
+}
+
+/**
+ * Sort picker. Deliberately an icon + menu rather than another ToggleButton in
+ * the filter rail: filter and sort are orthogonal, and putting them in one
+ * scrolling group reads as if picking a sort clears the active filter.
+ */
+@Composable
+private fun SortMenuButton(sort: RecordingSort, onSortChange: (RecordingSort) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { expanded = true }) {
+            Icon(
+                Icons.Outlined.SwapVert,
+                contentDescription = stringResource(R.string.primary_sort_label),
+            )
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            RecordingSort.values().forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(stringResource(option.labelRes())) },
+                    onClick = {
+                        onSortChange(option)
+                        expanded = false
+                    },
+                    trailingIcon = {
+                        if (option == sort) Icon(Icons.Outlined.Check, contentDescription = null)
+                    },
+                )
+            }
+        }
+    }
+}
+
+private fun RecordingSort.labelRes(): Int = when (this) {
+    RecordingSort.NEWEST -> R.string.primary_sort_newest
+    RecordingSort.OLDEST -> R.string.primary_sort_oldest
+    RecordingSort.LONGEST -> R.string.primary_sort_longest
+    RecordingSort.SHORTEST -> R.string.primary_sort_shortest
 }
 
 // ── List ─────────────────────────────────────────────────────────────────

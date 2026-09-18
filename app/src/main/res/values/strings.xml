@@ -18,6 +18,11 @@
     <string name="primary_select">Select</string>
     <string name="primary_selection_count">%1$d selected</string>
     <string name="primary_filter_all">All</string>
+    <string name="primary_sort_label">Sort recordings</string>
+    <string name="primary_sort_newest">Newest first</string>
+    <string name="primary_sort_oldest">Oldest first</string>
+    <string name="primary_sort_longest">Longest first</string>
+    <string name="primary_sort_shortest">Shortest first</string>
     <string name="primary_filter_today">Today</string>
     <string name="primary_filter_week">This week</string>
     <string name="primary_filter_favorites">Favorites</string>
