@@ -38,6 +38,14 @@ enum class AutoRecordScope { ALL, CONTACTS, NON_CONTACTS, UNKNOWN }
  */
 enum class RecordingSort { NEWEST, OLDEST, LONGEST, SHORTEST }
 
+/**
+ * How the app learns a call is in progress.
+ *  - PHONE_STATE: the manifest `CallStateReceiver` on ACTION_PHONE_STATE_CHANGED (default, works everywhere).
+ *  - IN_CALL_SERVICE: `CallDetectionService`, a non-UI Telecom InCallService. Needs the
+ *    MANAGE_ONGOING_CALLS app-op, which the Shizuku daemon can grant (AIDL op 31).
+ */
+enum class CallDetectionMode { PHONE_STATE, IN_CALL_SERVICE }
+
 /** How the app lock challenges the user. NONE = lock disabled. */
 enum class AppLockMethod { NONE, PIN, PASSWORD, BIOMETRIC }
 
@@ -107,6 +115,12 @@ class AppSettings(private val store: DataStore<Preferences>) {
             ?: RecordingFileNameFormatter.DEFAULT_TEMPLATE
     }
     suspend fun setExportNameTemplate(v: String) = store.edit { it[Keys.EXPORT_NAME_TEMPLATE] = v }
+
+    val callDetectionMode: Flow<CallDetectionMode> = store.data.map {
+        runCatching { CallDetectionMode.valueOf(it[Keys.CALL_DETECTION_MODE] ?: CallDetectionMode.PHONE_STATE.name) }
+            .getOrDefault(CallDetectionMode.PHONE_STATE)
+    }
+    suspend fun setCallDetectionMode(v: CallDetectionMode) = store.edit { it[Keys.CALL_DETECTION_MODE] = v.name }
 
     // App lock. The secret is never stored — only a salted SHA-256 (see
     // AppLockCrypto). Method is validated on read so a downgrade can't leave
@@ -247,6 +261,7 @@ class AppSettings(private val store: DataStore<Preferences>) {
         val CLEANUP_MAX_SIZE_GB = intPreferencesKey("auto_cleanup_max_size_gb")
         val SORT_ORDER = stringPreferencesKey("library_sort_order")
         val EXPORT_NAME_TEMPLATE = stringPreferencesKey("export_name_template")
+        val CALL_DETECTION_MODE = stringPreferencesKey("call_detection_mode")
         val APP_LOCK_ENABLED = booleanPreferencesKey("app_lock_enabled")
         val APP_LOCK_METHOD = stringPreferencesKey("app_lock_method")
         val APP_LOCK_HASH = stringPreferencesKey("app_lock_secret_hash")

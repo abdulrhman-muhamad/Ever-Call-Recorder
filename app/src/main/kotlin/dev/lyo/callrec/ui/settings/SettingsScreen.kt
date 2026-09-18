@@ -76,6 +76,8 @@ import com.coolappstore.evercallrecorder.by.svhp.BuildConfig
 import com.coolappstore.evercallrecorder.by.svhp.R
 import com.coolappstore.evercallrecorder.by.svhp.di.AppContainer
 import com.coolappstore.evercallrecorder.by.svhp.settings.AppLockMethod
+import com.coolappstore.evercallrecorder.by.svhp.settings.CallDetectionMode
+import com.coolappstore.evercallrecorder.by.svhp.permissions.CallDetectionPermission
 import com.coolappstore.evercallrecorder.by.svhp.ui.lock.AppLockSetupDialog
 import com.coolappstore.evercallrecorder.by.svhp.ui.lock.AppLockVerifyDialog
 import com.coolappstore.evercallrecorder.by.svhp.ui.lock.appLockMethodLabel
@@ -141,6 +143,9 @@ fun SettingsScreen(
     val nameTemplate by container.settings.exportNameTemplate
         .collectAsState(initial = RecordingFileNameFormatter.DEFAULT_TEMPLATE)
     val lockState by container.settings.appLockState.collectAsState(initial = null)
+    val detectionMode by container.settings.callDetectionMode.collectAsState(initial = CallDetectionMode.PHONE_STATE)
+    var detectionPermGranted by remember { mutableStateOf(CallDetectionPermission.isGranted(ctx)) }
+    val shizukuUnavailableMsg = stringResource(R.string.settings_call_detection_shizuku_unavailable)
     var showLockSetup by remember { mutableStateOf(false) }
     var showLockVerify by remember { mutableStateOf(false) }
     var pendingAfterLockVerify by remember { mutableStateOf<(() -> Unit)?>(null) }
@@ -559,6 +564,74 @@ fun SettingsScreen(
                 // ── Calibration ─────────────────────────────────────────────
                 Staggered(240) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        SectionHeader(stringResource(R.string.settings_section_detection))
+                        SettingCard {
+                            Column(modifier = Modifier.padding(20.dp)) {
+                                Text(
+                                    stringResource(R.string.settings_call_detection_title),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                                Spacer(Modifier.height(2.dp))
+                                Text(
+                                    stringResource(R.string.settings_call_detection_desc),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                Spacer(Modifier.height(12.dp))
+                                FlowRow(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    listOf(
+                                        CallDetectionMode.PHONE_STATE to R.string.settings_call_detection_phone_state,
+                                        CallDetectionMode.IN_CALL_SERVICE to R.string.settings_call_detection_in_call_service,
+                                    ).forEach { (mode, label) ->
+                                        ToggleButton(
+                                            checked = detectionMode == mode,
+                                            onCheckedChange = { scope.launch { container.settings.setCallDetectionMode(mode) } },
+                                            shapes = ToggleButtonDefaults.shapes(),
+                                        ) { Text(stringResource(label)) }
+                                    }
+                                }
+                                Spacer(Modifier.height(8.dp))
+                                Text(
+                                    stringResource(
+                                        if (detectionMode == CallDetectionMode.IN_CALL_SERVICE) R.string.settings_call_detection_in_call_service_desc
+                                        else R.string.settings_call_detection_phone_state_desc,
+                                    ),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            if (detectionMode == CallDetectionMode.IN_CALL_SERVICE) {
+                                Divider()
+                                LinkRow(
+                                    title = stringResource(
+                                        if (detectionPermGranted) R.string.settings_call_detection_permission_granted
+                                        else R.string.settings_call_detection_grant_permission,
+                                    ),
+                                    subtitle = stringResource(
+                                        if (detectionPermGranted) R.string.settings_call_detection_permission_granted_desc
+                                        else R.string.settings_call_detection_permission_missing,
+                                    ),
+                                    onClick = {
+                                        if (detectionPermGranted) return@LinkRow
+                                        val svc = container.shizuku.service.value
+                                        if (svc == null) {
+                                            scope.launch { snackbar.showSnackbar(shizukuUnavailableMsg) }
+                                        } else {
+                                            scope.launch {
+                                                CallDetectionPermission.grant(svc, ctx.packageName)
+                                                detectionPermGranted = CallDetectionPermission.isGranted(ctx)
+                                            }
+                                        }
+                                    },
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(20.dp))
+
                         SectionHeader(stringResource(R.string.settings_section_calibration))
                         SettingCard {
                             Column(modifier = Modifier.padding(20.dp)) {
