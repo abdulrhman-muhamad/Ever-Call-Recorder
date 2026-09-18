@@ -10,7 +10,6 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Re-drain the offline report queue after a reboot. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- Telephony state for auto-detect of OFFHOOK/IDLE transitions. -->
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />

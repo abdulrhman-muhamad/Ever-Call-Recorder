@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package com.coolappstore.evercallrecorder.by.svhp.ui.settings
 
-import android.app.DownloadManager
 import android.content.Context
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -32,20 +31,16 @@ import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.RestartAlt
-import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonGroup
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.InputChip
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -71,7 +66,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
 import com.coolappstore.evercallrecorder.by.svhp.BuildConfig
 import com.coolappstore.evercallrecorder.by.svhp.R
 import com.coolappstore.evercallrecorder.by.svhp.di.AppContainer
@@ -92,32 +86,7 @@ import com.coolappstore.evercallrecorder.by.svhp.settings.RecordingFormat
 import com.coolappstore.evercallrecorder.by.svhp.settings.RecordingMode
 import com.coolappstore.evercallrecorder.by.svhp.ui.components.strategyQuality
 import com.coolappstore.evercallrecorder.by.svhp.ui.legal.LegalDisclaimerSheet
-import com.coolappstore.evercallrecorder.by.svhp.util.enqueueApkDownload
-import com.coolappstore.evercallrecorder.by.svhp.util.fetchLatestRelease
-import com.coolappstore.evercallrecorder.by.svhp.util.getApkDestinationFile
-import com.coolappstore.evercallrecorder.by.svhp.util.installApkAndScheduleDelete
-import com.coolappstore.evercallrecorder.by.svhp.util.isNewerVersion
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlin.math.roundToInt
-
-private const val GITHUB_API_RELEASES =
-    "https://api.github.com/repos/hari161008/Ever-Call-Recorder/releases/latest"
-private val APP_VERSION get() = BuildConfig.VERSION_NAME
-
-private sealed class UpdateDialogState {
-    object Idle : UpdateDialogState()
-    object Checking : UpdateDialogState()
-    object UpToDate : UpdateDialogState()
-    data class ConfirmUpdate(val latestVersion: String, val apkUrl: String?) : UpdateDialogState()
-    data class Downloading(
-        val latestVersion: String,
-        val apkUrl: String?,
-        val downloadId: Long,
-        val progress: Float,
-    ) : UpdateDialogState()
-    object Error : UpdateDialogState()
-}
 
 @Composable
 fun SettingsScreen(
@@ -159,7 +128,6 @@ fun SettingsScreen(
     val snackbar = remember { SnackbarHostState() }
     val cleanupAppliedMsg = stringResource(R.string.settings_cleanup_applied)
     var showLegalSheet by remember { mutableStateOf(false) }
-    var updateDialogState by remember { mutableStateOf<UpdateDialogState>(UpdateDialogState.Idle) }
 
     val folderPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocumentTree()
@@ -174,118 +142,6 @@ fun SettingsScreen(
             }
             scope.launch { container.settings.setCustomRecordingPath(uri.toString()) }
         }
-    }
-
-    // ── Update dialogs ────────────────────────────────────────────────────────
-    when (val state = updateDialogState) {
-        is UpdateDialogState.Checking -> Dialog(onDismissRequest = {}) {
-            Surface(
-                shape = MaterialTheme.shapes.extraLarge,
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            ) {
-                Column(
-                    Modifier.padding(24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                ) {
-                    CircularProgressIndicator()
-                    Text(stringResource(R.string.settings_update_checking), style = MaterialTheme.typography.bodyLarge)
-                }
-            }
-        }
-
-        is UpdateDialogState.UpToDate -> AlertDialog(
-            onDismissRequest = { updateDialogState = UpdateDialogState.Idle },
-            icon = { Icon(Icons.Outlined.SystemUpdate, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(48.dp)) },
-            title = { Text(stringResource(R.string.settings_update_up_to_date_title)) },
-            text = { Text(stringResource(R.string.settings_update_up_to_date_msg, APP_VERSION)) },
-            confirmButton = { TextButton(onClick = { updateDialogState = UpdateDialogState.Idle }) { Text(stringResource(R.string.settings_update_ok)) } },
-        )
-
-        is UpdateDialogState.ConfirmUpdate -> AlertDialog(
-            onDismissRequest = { updateDialogState = UpdateDialogState.Idle },
-            icon = { Icon(Icons.Outlined.SystemUpdate, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(48.dp)) },
-            title = { Text(stringResource(R.string.settings_update_available_title)) },
-            text = { Text(stringResource(R.string.settings_update_available_msg, state.latestVersion)) },
-            confirmButton = {
-                Button(onClick = {
-                    val url = state.apkUrl
-                    if (url != null) {
-                        val downloadId = enqueueApkDownload(ctx, url)
-                        updateDialogState = if (downloadId != null)
-                            UpdateDialogState.Downloading(state.latestVersion, url, downloadId, 0f)
-                        else UpdateDialogState.Error
-                    } else {
-                        updateDialogState = UpdateDialogState.Error
-                    }
-                }) { Text(stringResource(R.string.settings_update_download)) }
-            },
-            dismissButton = {
-                TextButton(onClick = { updateDialogState = UpdateDialogState.Idle }) {
-                    Text(stringResource(R.string.settings_update_not_now))
-                }
-            },
-        )
-
-        is UpdateDialogState.Downloading -> {
-            LaunchedEffect(state.downloadId) {
-                val dm = ctx.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-                while (true) {
-                    delay(300)
-                    val query = DownloadManager.Query().setFilterById(state.downloadId)
-                    val cursor = dm.query(query)
-                    if (!cursor.moveToFirst()) { cursor.close(); break }
-                    val dmStatus = cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))
-                    val downloaded = cursor.getLong(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR))
-                    val total = cursor.getLong(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES))
-                    cursor.close()
-                    when (dmStatus) {
-                        DownloadManager.STATUS_SUCCESSFUL -> {
-                            updateDialogState = UpdateDialogState.Idle
-                            installApkAndScheduleDelete(ctx, getApkDestinationFile())
-                            break
-                        }
-                        DownloadManager.STATUS_FAILED -> {
-                            updateDialogState = UpdateDialogState.Error
-                            break
-                        }
-                        else -> {
-                            val progress = if (total > 0L) (downloaded.toFloat() / total).coerceIn(0f, 1f) else 0f
-                            updateDialogState = state.copy(progress = progress)
-                        }
-                    }
-                }
-            }
-            Dialog(onDismissRequest = {}) {
-                Surface(shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
-                    Column(
-                        Modifier.padding(24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(16.dp),
-                    ) {
-                        Icon(Icons.Outlined.SystemUpdate, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(36.dp))
-                        Text(stringResource(R.string.settings_update_downloading), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                        Text("v${state.latestVersion}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
-                            LinearProgressIndicator(progress = { state.progress }, modifier = Modifier.fillMaxWidth())
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("${(state.progress * 100).roundToInt()}%", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text(stringResource(R.string.settings_update_downloading_wait), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        is UpdateDialogState.Error -> AlertDialog(
-            onDismissRequest = { updateDialogState = UpdateDialogState.Idle },
-            title = { Text(stringResource(R.string.settings_update_error_title)) },
-            text = { Text(stringResource(R.string.settings_update_error_msg)) },
-            confirmButton = { TextButton(onClick = { updateDialogState = UpdateDialogState.Idle }) { Text(stringResource(R.string.settings_update_ok)) } },
-        )
-
-        else -> {}
     }
 
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -328,31 +184,6 @@ fun SettingsScreen(
                     .padding(horizontal = 20.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(20.dp),
             ) {
-
-                // ── Check for updates ────────────────────────────────────────
-                Staggered(0) {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        SectionHeader(stringResource(R.string.settings_section_updates))
-                        SettingCard {
-                            LinkRow(
-                                title = stringResource(R.string.settings_check_for_updates),
-                                subtitle = stringResource(R.string.settings_check_for_updates_desc, APP_VERSION),
-                                onClick = {
-                                    scope.launch {
-                                        updateDialogState = UpdateDialogState.Checking
-                                        val release = fetchLatestRelease(GITHUB_API_RELEASES)
-                                        updateDialogState = when {
-                                            release == null -> UpdateDialogState.Error
-                                            isNewerVersion(release.tagName, APP_VERSION) ->
-                                                UpdateDialogState.ConfirmUpdate(release.tagName, release.apkUrl)
-                                            else -> UpdateDialogState.UpToDate
-                                        }
-                                    }
-                                },
-                            )
-                        }
-                    }
-                }
 
                 // ── Recording behaviour ──────────────────────────────────────
                 Staggered(80) {
