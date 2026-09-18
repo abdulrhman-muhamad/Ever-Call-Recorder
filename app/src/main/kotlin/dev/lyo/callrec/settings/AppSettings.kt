@@ -46,6 +46,9 @@ enum class RecordingSort { NEWEST, OLDEST, LONGEST, SHORTEST }
  */
 enum class CallDetectionMode { PHONE_STATE, IN_CALL_SERVICE }
 
+/** Light/dark preference. SYSTEM follows the OS. */
+enum class ThemeMode { SYSTEM, LIGHT, DARK }
+
 /** How the app lock challenges the user. NONE = lock disabled. */
 enum class AppLockMethod { NONE, PIN, PASSWORD, BIOMETRIC }
 
@@ -121,6 +124,11 @@ class AppSettings(private val store: DataStore<Preferences>) {
             .getOrDefault(CallDetectionMode.PHONE_STATE)
     }
     suspend fun setCallDetectionMode(v: CallDetectionMode) = store.edit { it[Keys.CALL_DETECTION_MODE] = v.name }
+
+    val themeMode: Flow<ThemeMode> = store.data.map {
+        runCatching { ThemeMode.valueOf(it[Keys.THEME_MODE] ?: ThemeMode.SYSTEM.name) }.getOrDefault(ThemeMode.SYSTEM)
+    }
+    suspend fun setThemeMode(v: ThemeMode) = store.edit { it[Keys.THEME_MODE] = v.name }
 
     // App lock. The secret is never stored — only a salted SHA-256 (see
     // AppLockCrypto). Method is validated on read so a downgrade can't leave
@@ -262,6 +270,7 @@ class AppSettings(private val store: DataStore<Preferences>) {
         val SORT_ORDER = stringPreferencesKey("library_sort_order")
         val EXPORT_NAME_TEMPLATE = stringPreferencesKey("export_name_template")
         val CALL_DETECTION_MODE = stringPreferencesKey("call_detection_mode")
+        val THEME_MODE = stringPreferencesKey("theme_mode")
         val APP_LOCK_ENABLED = booleanPreferencesKey("app_lock_enabled")
         val APP_LOCK_METHOD = stringPreferencesKey("app_lock_method")
         val APP_LOCK_HASH = stringPreferencesKey("app_lock_secret_hash")

@@ -77,6 +77,7 @@ import com.coolappstore.evercallrecorder.by.svhp.R
 import com.coolappstore.evercallrecorder.by.svhp.di.AppContainer
 import com.coolappstore.evercallrecorder.by.svhp.settings.AppLockMethod
 import com.coolappstore.evercallrecorder.by.svhp.settings.CallDetectionMode
+import com.coolappstore.evercallrecorder.by.svhp.settings.ThemeMode
 import com.coolappstore.evercallrecorder.by.svhp.permissions.CallDetectionPermission
 import com.coolappstore.evercallrecorder.by.svhp.ui.lock.AppLockSetupDialog
 import com.coolappstore.evercallrecorder.by.svhp.ui.lock.AppLockVerifyDialog
@@ -144,6 +145,7 @@ fun SettingsScreen(
         .collectAsState(initial = RecordingFileNameFormatter.DEFAULT_TEMPLATE)
     val lockState by container.settings.appLockState.collectAsState(initial = null)
     val detectionMode by container.settings.callDetectionMode.collectAsState(initial = CallDetectionMode.PHONE_STATE)
+    val themeMode by container.settings.themeMode.collectAsState(initial = ThemeMode.SYSTEM)
     var detectionPermGranted by remember { mutableStateOf(CallDetectionPermission.isGranted(ctx)) }
     val shizukuUnavailableMsg = stringResource(R.string.settings_call_detection_shizuku_unavailable)
     var showLockSetup by remember { mutableStateOf(false) }
@@ -764,6 +766,35 @@ fun SettingsScreen(
                 // ── About ───────────────────────────────────────────────────
                 Staggered(400) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        SectionHeader(stringResource(R.string.settings_section_appearance))
+                        SettingCard {
+                            Column(modifier = Modifier.padding(20.dp)) {
+                                Text(
+                                    stringResource(R.string.settings_theme_title),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                                Spacer(Modifier.height(12.dp))
+                                FlowRow(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    listOf(
+                                        ThemeMode.SYSTEM to R.string.settings_theme_system,
+                                        ThemeMode.LIGHT to R.string.settings_theme_light,
+                                        ThemeMode.DARK to R.string.settings_theme_dark,
+                                    ).forEach { (mode, label) ->
+                                        ToggleButton(
+                                            checked = themeMode == mode,
+                                            onCheckedChange = { scope.launch { container.settings.setThemeMode(mode) } },
+                                            shapes = ToggleButtonDefaults.shapes(),
+                                        ) { Text(stringResource(label)) }
+                                    }
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(20.dp))
+
                         SectionHeader(stringResource(R.string.settings_section_security))
                         SettingCard {
                             val ls = lockState

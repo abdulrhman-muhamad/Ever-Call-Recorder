@@ -25,6 +25,8 @@ import com.coolappstore.evercallrecorder.by.svhp.permissions.SetupStatus
 import com.coolappstore.evercallrecorder.by.svhp.ui.nav.CallrecApp
 import com.coolappstore.evercallrecorder.by.svhp.ui.theme.CallrecTheme
 import com.coolappstore.evercallrecorder.by.svhp.ui.lock.AppLockScreen
+import com.coolappstore.evercallrecorder.by.svhp.settings.ThemeMode
+import androidx.compose.foundation.isSystemInDarkTheme
 import kotlinx.coroutines.launch
 
 // FragmentActivity (not ComponentActivity) because androidx.biometric's
@@ -56,7 +58,14 @@ class MainActivity : FragmentActivity() {
         pendingCallId = intent?.getStringExtra(CompletedRecordingNotification.EXTRA_OPEN_CALL_ID)
 
         setContent {
-            CallrecTheme {
+            val themeMode by container.settings.themeMode.collectAsState(initial = ThemeMode.SYSTEM)
+            CallrecTheme(
+                darkTheme = when (themeMode) {
+                    ThemeMode.LIGHT -> false
+                    ThemeMode.DARK -> true
+                    ThemeMode.SYSTEM -> isSystemInDarkTheme()
+                },
+            ) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background,
