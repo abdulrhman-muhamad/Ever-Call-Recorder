@@ -843,6 +843,18 @@ fun SettingsScreen(
                                 subtitle = stringResource(R.string.settings_legal_subtitle),
                                 onClick = { showLegalSheet = true },
                             )
+                            Divider()
+                            LinkRow(
+                                title = stringResource(R.string.settings_source_title),
+                                subtitle = stringResource(R.string.settings_source_subtitle),
+                                onClick = { openUrl(ctx, SOURCE_URL) },
+                            )
+                            Divider()
+                            LinkRow(
+                                title = stringResource(R.string.settings_issue_title),
+                                subtitle = stringResource(R.string.settings_issue_subtitle),
+                                onClick = { openUrl(ctx, ISSUES_URL) },
+                            )
                         }
                     }
                 }
@@ -1022,6 +1034,15 @@ private val PREVIEW_RECORD = CallRecord(
     uplinkPath = "",
     downlinkPath = null,
 )
+
+private const val SOURCE_URL = "https://github.com/abdulrhman-muhamad/Ever-Call-Recorder"
+private const val ISSUES_URL = "https://github.com/abdulrhman-muhamad/Ever-Call-Recorder/issues/new"
+
+/** Open [url] in whatever handles it; swallow the no-browser case rather than crash Settings. */
+private fun openUrl(ctx: android.content.Context, url: String) {
+    val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))
+    runCatching { ctx.startActivity(intent) }
+}
 
 @Composable
 private fun SectionHeader(text: String) {
